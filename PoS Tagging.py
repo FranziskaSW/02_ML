@@ -213,21 +213,6 @@ tag_pairs = DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1) # combine Ta
 tag_freq = tag_pairs.value_counts() / len(tag_pairs)
 
 pd.DataFrame(tag_freq).to_pickle('HMM_tag_freq-90.pkl')
-
-print('next step')
-
-DF = pd.DataFrame()
-for i in range(0,9723):
-    t = data[i][0]
-    mat = np.matrix([([START_STATE] + t), (t + [END_STATE])]).T
-    df = pd.DataFrame(mat)
-    DF = DF.append(df, ignore_index=True)
-
-tag_pairs = DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1) # combine Tags to pairs
-
-tag_freq = tag_pairs.value_counts() / len(tag_pairs)
-
-pd.DataFrame(tag_freq).to_pickle('HMM_tag_freq-20.pkl')
 '''
 
 words_count = pickle.load(open('words_count_90.pkl', 'rb'))
@@ -241,23 +226,12 @@ tag_freq = tag_freq.reset_index()
 tag_freq.columns = ['tag', 'value']
 
 def translate_idx(tag_freq):
-    pos_str  = re.split("\|", tag_freq.e)[0]
+    pos_str  = re.split("\|", tag_freq.tag)[0]
     pos_r_idx  = pos2i_h[pos_str]
-    pos_str  = re.split("\|", tag_freq.e)[1]
+    pos_str  = re.split("\|", tag_freq.tag)[1]
     pos_c_idx  = pos2i_h[pos_str]
     value = tag_freq.value
-    return([pos_r, pos_c, value])
-
-def translate_idx(e_count):
-    pos_str  = re.split("\|", e_count.e)[1]
-    pos_idx  = pos2i[pos_str]
-    word_str = re.split("\|", e_count.e)[0]
-    try:
-        word_idx = word2i[word_str]
-    except KeyError:
-        word_idx = word2i[RARE_WORD]
-    value = e_count.value
-    return([word_idx, pos_idx, value])
+    return([pos_r_idx, pos_c_idx, value])
 
 # create T_freq-matrix row: pos(i), column: pos(i-1)
 
@@ -265,79 +239,48 @@ tripel = tag_freq.apply(lambda x: translate_idx(x), axis=1)
 T_freq = np.matrix(np.zeros([len(pos_h),len(pos_h)]))
 
 for row in tripel:
-    T_freq[row[0], row[1]] = row[2]
+    T_freq[row[0], row[1]] = T_freq[row[0], row[1]] + row[2]
 
-T_start = T_freq[0,1:-1]
+T_start = T_freq[pos2i_h[START_STATE],1:-1]
 
 # remove start and end state again
 T_freq = T_freq[1:-1,1:-1]
 
-# E_prob-matrix
-# Same as from baseline model but add colum for START_STATUS and END_STATUS
-E_count = pickle.load(open('baseline_E-count_90.pkl', 'rb'))
-E_count = np.matrix(E_count)
 
-words_count    = E_count.sum(axis=1) #for infrequent words
-words_idx_rare = (words_count <= 4)
-rare_idx_list  = words_idx_rare.flatten().tolist()[0]
-words_rare     = list(compress(words, rare_idx_list))
-used_idx_list  = (~words_idx_rare).flatten().tolist()[0]
-words_used     = list(compress(words, used_idx_list))
-
-#reduce E_count to used words - remove rare words
-E_count_used = E_count[used_idx_list, :]
-
-#create E-prob matrix
-E_prob = np.nan_to_num(E_count_used / words_count[used_idx_list])
-#Add zero rows for START_ and END_STATE
-#E_prob = np.vstack((np.zeros(len(words_used)), E_prob.T, np.zeros(len(words_used)))).T
-#create E-prob matrix
-
-pi_y        = E_count_used.sum(axis=0)/words_count[used_idx_list].sum()
-
+E_prob = pickle.load(open('E_prob_90.pkl', 'rb'))
+E_prob = np.matrix(E_prob)
+pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
 
 def find_tag(word_str, tags, pi):
     prev_tag = tags[-1]
+
+    if prev_tag == START_STATE:
+        T_freq_part = np.log(T_start)
+    else:
+        T_freq_part = np.log(T_freq[pos2i[prev_tag]])
+
     try:
-        if prev_tag == RARE_WORD:
-            pi = pi.max() + np.log(E_prob[words_used.index(word_str)])
-        else:
-            pi = pi.max() + np.log(T_freq[pos.index(prev_tag),:]) + np.log(E_prob[words_used.index(word_str)])
-            
-        if pi.max() == (-1)*np.inf: # baseline model
-            pi = np.log(pi_y) + np.log(E_prob[words_used.index(word_str)])
-            
-        tag = pos[pi.argmax()]
-    except ValueError:
-        pi = pi
-        tag = RARE_WORD
+        pi = pi.max() + np.log(E_prob[word2i[word_str]]) + T_freq_part
+    except KeyError:   # RARE_WORD
+        pi = pi.max() + np.log(E_prob[word2i[RARE_WORD]]) + T_freq_part
+
+    tag = pos[pi.argmax()]
     return(tag)
 
-def all_tags(sentence):
-    tags = []
-    word_str = sentence[0]
-    try:
-        pi = np.log(T_start) + np.log(E_prob[words_used.index(word_str)])
-        tags.append(pos[pi.argmax()])
-    except ValueError:
-        pi = np.log(T_start) + np.log(pi_y)
-        tags.append(RARE_WORD)
-        
-    tags = pd.Series(sentence).apply(lambda x: find_tag(x, tags, pi))
-    return(tags)
 
 sentence = data[43830][1] #43830
-all_tags(sentence)
+pd.Series(sentence).apply(lambda x: find_tag(x, tags, pi))
 
     
 score = []
 a = 43758
-for i in range(a, a+300):
+for i in range(a, a+1000):
     sentence = data[i][1]
-    tags = all_tags(sentence)
+    tags = [START_STATE]
+    tags_est = pd.Series(sentence).apply(lambda x: find_tag(x, tags, pi))
 
     # to measure accuracy: (how many percent of pos were right)
-    score_i = (np.array(tags) == np.array(data[i][0])).sum()/len(data[i][0])
+    score_i = (np.array(tags_est) == np.array(data[i][0])).sum()/len(data[i][0])
     score.append(score_i)
 
 final_score = sum(score)/len(score)
