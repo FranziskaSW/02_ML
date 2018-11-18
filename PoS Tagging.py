@@ -85,10 +85,29 @@ class Baseline(object):
 ############################################################################
 #     Data Preprocessing
 ############################################################################
-training_set = data[0:43757]  # 90% band of data 43757
+training_data = data[0:43757]  # 90% band of data 43757
 
 DF = pd.DataFrame()
-for row in training_set:
+for row in training_data:
+    mat = np.matrix([row[1]]).T
+    df = pd.DataFrame(mat)
+    DF = DF.append(df, ignore_index=True)
+
+words_count = DF[0].value_counts()
+#words_count.to_pickle('words_count_90.pkl')
+
+#words_count = pickle.load(open('words_count_90.pkl', 'rb'))
+
+words_idx_rare = (words_count <= 3)
+words_rare = words_count[words_idx_rare].index.tolist()  # 31928
+words_used = words_count[~words_idx_rare].index.tolist() # 14969
+words_used = words_used + [RARE_WORD]
+
+word2i = {word:i for (i,word) in enumerate(words_used)}
+pos2i  = {pos:i for (i,pos) in enumerate(pos)}
+
+DF = pd.DataFrame()
+for row in training_data:
     mat = np.matrix([row[1], row[0]]).T
     df = pd.DataFrame(mat)
     DF = DF.append(df, ignore_index=True)
@@ -102,61 +121,60 @@ e_count.columns = ['e', 'value']
 # index has format word_str|pos_str
 # now fill matrix: row=word - column = pos
 
-
-def translate_idx(e_freq):
-    pos_str   = re.split("\|", e_freq.e)[1]
-    pos_idx   = pos.index(pos_str)
-    word_str  = re.split("\|", e_freq.e)[0]
-    word_idx  = words.index(word_str)
-    value = e_freq.value
+def translate_idx(e_count):
+    pos_str  = re.split("\|", e_count.e)[1]
+    pos_idx  = pos2i[pos_str]
+    word_str = re.split("\|", e_count.e)[0]
+    try:
+        word_idx = word2i[word_str]
+    except KeyError:
+        word_idx = word2i[RARE_WORD]
+    value = e_count.value
     return([word_idx, pos_idx, value])
 
-    
 # create e-count matrix
-    
 tripel = e_count.apply(lambda x: translate_idx(x), axis=1)
-E_count = np.matrix(np.zeros([len(words),len(pos)]))
+E_count = np.matrix(np.zeros([len(word2i),len(pos2i)]))
 for row in tripel:
-    print(row)
-    E_count[row[0], row[1]] = row[2]
+    E_count[row[0], row[1]] = E_count[row[0], row[1]] + row[2]
 
 #pd.DataFrame(E_count).to_pickle('baseline_E-count_20.pkl')
 
-E_count = pickle.load(open('baseline_E-count_90.pkl', 'rb'))
+#E_count = pickle.load(open('baseline_E-count_90.pkl', 'rb'))
 E_count = np.matrix(E_count)
 
-words_count    = E_count.sum(axis=1) # for infrequent words
-words_idx_rare = (words_count <= 0)
-rare_idx_list  = words_idx_rare.flatten().tolist()[0]
-words_rare     = list(compress(words, rare_idx_list))
-used_idx_list  = (~words_idx_rare).flatten().tolist()[0]
-words_used     = list(compress(words, used_idx_list))
+#words_count    = E_count.sum(axis=1) # for infrequent words
+#words_idx_rare = (words_count <= 0)
+#rare_idx_list  = words_idx_rare.flatten().tolist()[0]
+#words_rare     = list(compress(words, rare_idx_list))
+#used_idx_list  = (~words_idx_rare).flatten().tolist()[0]
+#words_used     = list(compress(words, used_idx_list))
 
 #reduce E_count to used words - remove rare words
-E_count_used = E_count[used_idx_list, :]
+#E_count_used = E_count[used_idx_list, :]
 
-#create E-prob matrix
-E_prob = np.nan_to_num(E_count_used / words_count[used_idx_list])
+#create E-prob matrix probability P(pos, word)
+E_prob = np.nan_to_num(E_count / E_count.sum(axis=1))
 
-pi_y        = E_count_used.sum(axis=0)/words_count[used_idx_list].sum()
-
-
+# P(pos)
+pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
 
 def Likelihood(word_str):
     try:
-        idx = words_used.index(word_str)  # finds the index for the word of interest
-        pos_idx = np.multiply(pi_y, E_prob[idx]).argmax()
-        pos_str = pos[pos_idx]
-
-    except (IndexError ,ValueError):
-        pos_str = RARE_WORD
+        word_idx = word2i[word_str]  # finds the index for the word of interest
+    except KeyError:
+        word_idx = word2i[RARE_WORD]
+    pos_idx = np.multiply(pi_y, E_prob[word_idx]).argmax()
+    pos_str = pos[pos_idx]
     return(pos_str)
+
 
 score = []
 a = 43758
 for i in range(a, a+100):
     tags = []
-    for word_str in data[i][1]:
+    sentence = data[i][1]
+    for word_str in sentence:
         tag = Likelihood(word_str)
         tags.append(tag)
 
@@ -212,20 +230,34 @@ tag_freq = tag_pairs.value_counts() / len(tag_pairs)
 pd.DataFrame(tag_freq).to_pickle('HMM_tag_freq-20.pkl')
 '''
 
-pos_h = [START_STATE] + pos + [END_STATE]
+words_count = pickle.load(open('words_count_90.pkl', 'rb'))
+E_prob = pickle.load(open('E_prob_90.pkl', 'rb'))
 
+pos_h = [START_STATE] + pos + [END_STATE]
+pos2i_h = {pos:i for (i,pos) in enumerate(pos_h)}
 tag_freq = pickle.load(open('HMM_tag_freq-90.pkl', 'rb'))
 
 tag_freq = tag_freq.reset_index()
 tag_freq.columns = ['tag', 'value']
 
 def translate_idx(tag_freq):
-    pos_r_str = re.split("\|", tag_freq.tag)[0]
-    pos_r     = pos_h.index(pos_r_str)
-    pos_c_str = re.split("\|", tag_freq.tag)[1]
-    pos_c  = pos_h.index(pos_c_str)
+    pos_str  = re.split("\|", tag_freq.e)[0]
+    pos_r_idx  = pos2i_h[pos_str]
+    pos_str  = re.split("\|", tag_freq.e)[1]
+    pos_c_idx  = pos2i_h[pos_str]
     value = tag_freq.value
     return([pos_r, pos_c, value])
+
+def translate_idx(e_count):
+    pos_str  = re.split("\|", e_count.e)[1]
+    pos_idx  = pos2i[pos_str]
+    word_str = re.split("\|", e_count.e)[0]
+    try:
+        word_idx = word2i[word_str]
+    except KeyError:
+        word_idx = word2i[RARE_WORD]
+    value = e_count.value
+    return([word_idx, pos_idx, value])
 
 # create T_freq-matrix row: pos(i), column: pos(i-1)
 
@@ -379,25 +411,27 @@ def hmm_mle(training_set, model):
 # find sequence of y that maximizes score
 training_data = data[:43757] #90%
 
-DF = pd.DataFrame()
-for row in training_data:
-    mat = np.matrix([row[1]]).T
-    df = pd.DataFrame(mat)
-    DF = DF.append(df, ignore_index=True)
+#DF = pd.DataFrame()
+#for row in training_data:
+ #   mat = np.matrix([row[1]]).T
+  #  df = pd.DataFrame(mat)
+   # DF = DF.append(df, ignore_index=True)
 
-words_count = DF[0].value_counts()
+#words_count = DF[0].value_counts()
+#words_count.to_pickle('words_count_90.pkl')
+
+words_count = pickle.load(open('words_count_90.pkl', 'rb'))
+
 words_idx_rare = (words_count <= 3)
 words_rare = words_count[words_idx_rare].index.tolist()  # 31928
 words_used = words_count[~words_idx_rare].index.tolist() # 14969
 words_used = words_used + [RARE_WORD]
-
 
 word2i = {word:i for (i,word) in enumerate(words_used)}
 pos2i  = {pos:i for (i,pos) in enumerate(pos)}
 
 
 def find_tag(tags, word_str, w):
-    # TODO: RARE_WORD
     score = []
     prev_tag = tags[-1]
 
