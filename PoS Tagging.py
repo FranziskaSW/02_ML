@@ -377,8 +377,7 @@ def hmm_mle(training_set, model):
 # TODO: in baseline and HMM: use word2i and pos2i instead of pos.index(pos_str)
 
 # find sequence of y that maximizes score
-
-training_data = data[:2000]
+training_data = data[:43757] #90%
 
 DF = pd.DataFrame()
 for row in training_data:
@@ -390,6 +389,7 @@ words_count = DF[0].value_counts()
 words_idx_rare = (words_count <= 3)
 words_rare = words_count[words_idx_rare].index.tolist()  # 31928
 words_used = words_count[~words_idx_rare].index.tolist() # 14969
+words_used = words_used + [RARE_WORD]
 
 
 word2i = {word:i for (i,word) in enumerate(words_used)}
@@ -402,20 +402,18 @@ def find_tag(tags, word_str, w):
     prev_tag = tags[-1]
 
     try:
-        e_offset = len(pos2i) * word2i[word_str] # e(|pos|*word(i))
+        e_offset = len(pos2i)*word2i[word_str]      # e(|pos|*word(i))
     except KeyError:
-        e_offset = len(pos2i)*len(word2i)        # e(|pos|*|words|) It's a rare word
+        e_offset = len(pos2i)*word2i[RARE_WORD]     # e(|pos|*|words|) It's a rare word
 
     if prev_tag == START_STATE:
-        t_offset = len(pos2i)*len(word2i) + len(pos2i) + len(pos2i)*len(pos2i)       # e(|words|*|pos|) + e_rare(|pos|) + t(|pos|*|pos|)
+        t_offset = len(pos2i)*len(word2i) + len(pos2i)*len(pos2i)       # e(|words|*|pos|) + t(|pos|*|pos|)
     else:
-        t_offset = len(pos2i)*len(word2i) + len(pos2i) + len(pos2i)*pos2i[prev_tag]  # e(|words|*|pos|) + e_rare(|pos|) + t(|pos|*pos(i-1))
+        t_offset = len(pos2i)*len(word2i) + len(pos2i)*pos2i[prev_tag]  # e(|words|*|pos|) + t(|pos|*pos(i-1))
 
     for i in range(0,len(pos2i)):  # to test which of the pos would give best result
         e_idx = e_offset + i
         t_idx = t_offset + i
-
-        print(e_idx, t_idx)
 
         try: 
             score_i = w[e_idx]
@@ -437,16 +435,18 @@ def phi(sentence, tags):
         word_str = sentence[i]
         pos_str  = tags[i]
 
+        # handle RARE_WORDS
         try:
-            e_idx = len(pos2i) * word2i[word_str] + pos2i[pos_str]
+            e_idx = len(pos2i)*word2i[word_str] + pos2i[pos_str]
         except KeyError:
-            e_idx = len(pos2i) * len(word2i) + pos2i[pos_str]
+            e_idx = len(pos2i)*word2i[RARE_WORD] + pos2i[pos_str]
 
+        # handle START_STATE because is not included in pos2i
         if i == 0:
-            t_offset = len(pos2i)*len(word2i) + len(pos2i) + len(pos2i)*len(pos2i)
+            t_offset = len(pos2i)*len(word2i) + len(pos2i)*len(pos2i)
         else:
             prev_tag = tags[i-1]
-            t_offset = len(pos2i)*len(word2i) + len(pos2i) + len(pos2i)*pos2i[prev_tag]
+            t_offset = len(pos2i)*len(word2i) + len(pos2i)*pos2i[prev_tag]
         t_idx = t_offset + pos2i[pos_str]
 
         phi_i = {e_idx:1, t_idx:1}
@@ -461,7 +461,6 @@ def phi(sentence, tags):
 
     
 def train_MEMM(training_data, eta):
-    
     w = {}
     for i in range(0,len(training_data)):
         sentence   = training_data[i][1]
@@ -492,14 +491,15 @@ def train_MEMM(training_data, eta):
                 w[key] = eta*phi_diff[key]
     return(w)
     
-training_data = data[:1] #43757] #90%
+training_data = data[:43757] #90%
 
 w = train_MEMM(training_data = training_data, eta = 0.2)
 # test if makes some sense
 w[len(pos2i)*word2i['the']+pos2i['DT']]
 w[len(pos2i)*word2i[',']+pos2i[',']]
 w[len(pos2i)*word2i['as']+pos2i['IN']]
-w[len(pos2i)*word2i[',']+pos2i['DT']]
+w[len(pos2i)*word2i['is']+pos2i['VBZ']]
+w[len(pos2i)*word2i[RARE_WORD]+pos2i['DT']]
 
 
 score = []
