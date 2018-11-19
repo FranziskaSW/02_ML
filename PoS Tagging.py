@@ -348,9 +348,6 @@ def hmm_mle(training_set, model):
 
     # TODO: YOUR CODE HERE
 
-# TODO: in baseline and HMM: RARE WORDS before calculation of estimators e,t
-# TODO: in baseline and HMM: use word2i and pos2i instead of pos.index(pos_str)
-
 # find sequence of y that maximizes score
 training_data = data[:43757] #90%
 
