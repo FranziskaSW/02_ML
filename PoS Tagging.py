@@ -308,16 +308,16 @@ def hmm_mle(training_set, model):
         # emission pairs: (word_i|pos_i)
         e = np.matrix([row[1], row[0]]).T
         e_df = pd.DataFrame(e)
-        E_DF = E_DF.append(e_df, ignore_index=True)
+        E_DF = DF.append(df, ignore_index=True)
 
-    e_pairs = E_DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine pos-word
+    e_pairs = DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine pos-word
     # pairs have format word_str|pos_str
     e_count = e_pairs.value_counts()
     e_count = e_count.reset_index()
     e_count.columns = ['e', 'value']
 
     # translate pairs to numeric index-pairs for matrix
-    tripel = e_count.apply(lambda x: model.translate_e_idx(x), axis=1)
+    tripel = e_count.apply(lambda x: model.translate_idx(x), axis=1)
 
     # fill matrix row = word, column = pos
     E_count = np.matrix(np.zeros([len(model.word2i), len(model.pos2i)]))
@@ -329,6 +329,9 @@ def hmm_mle(training_set, model):
 
     # P(pos)
     pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
+
+    return([E_prob, pi_y])
+
 
     #--------------------------------------------------------------------------------------------------------------
     # same for pos-pairs
@@ -619,7 +622,6 @@ if __name__ == '__main__':
     # words that were used in training set:
     # words_used = find_frequent_words(training_set)
     # pd.Series(words_used).to_pickle('words_used_90.pickle')
-    words_used = load(open('words_used_90.pickle'))
     words_used = pickle.load(open('words_used_90.pickle', 'rb')).tolist()
 
     # define baseline model
