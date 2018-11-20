@@ -65,7 +65,7 @@ class Baseline(object):
 
         self.words = words
         self.pos_tags = pos_tags
-        self.words_size = len(words)
+        self.words_size = len(words) + 1
         self.pos_size = len(pos_tags)
         self.pos2i = {pos:i for (i, pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i, word) in enumerate(words + [RARE_WORD])}
@@ -241,7 +241,7 @@ class HMM(object):
         self.words_size = len(words)
         self.pos_size = len(pos_tags)
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
-        self.word2i = {word:i for (i,word) in enumerate(words)}
+        self.word2i = {word:i for (i,word) in enumerate(words + [RARE_WORD])}
 
         # TODO: YOUR CODE HERE
 
@@ -253,6 +253,24 @@ class HMM(object):
 
         # TODO: YOUR CODE HERE
 
+    def translate_e_idx(self, e_count):
+        pos_str = re.split("\|", e_count.e)[1]
+        pos_idx = self.pos2i[pos_str]
+        word_str = re.split("\|", e_count.e)[0]
+        try:
+            word_idx = self.word2i[word_str]
+        except KeyError:
+            word_idx = self.word2i[RARE_WORD]
+        value = e_count.value
+        return ([word_idx, pos_idx, value])
+
+    def translate_t_idx(self, tag_freq):
+        pos_str = re.split("\|", tag_freq.tag)[0]
+        pos_r_idx = self.pos2i[pos_str]
+        pos_str = re.split("\|", tag_freq.tag)[1]
+        pos_c_idx = self.pos2i[pos_str]
+        value = tag_freq.value
+        return ([pos_r_idx, pos_c_idx, value])
 
     def viterbi(self, sentences):
         '''
@@ -281,6 +299,69 @@ def hmm_mle(training_set, model):
 
     # TODO: YOUR CODE HERE
 
+    T_DF, E_DF = pd.DataFrame(), pd.DataFrame()
+    for row in training_set:
+        # transition pairs: (pos_i-1|pos_i)
+        t = np.matrix([([START_STATE] + row[0]), (row[0] + [END_STATE])]).T
+        t_df = pd.DataFrame(t)
+        T_DF = T_DF.append(t_df, ignore_index=True)
+        # emission pairs: (word_i|pos_i)
+        e = np.matrix([row[1], row[0]]).T
+        e_df = pd.DataFrame(e)
+        E_DF = E_DF.append(e_df, ignore_index=True)
+
+    e_pairs = E_DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine pos-word
+    # pairs have format word_str|pos_str
+    e_count = e_pairs.value_counts()
+    e_count = e_count.reset_index()
+    e_count.columns = ['e', 'value']
+
+    # translate pairs to numeric index-pairs for matrix
+    tripel = e_count.apply(lambda x: model.translate_e_idx(x), axis=1)
+
+    # fill matrix row = word, column = pos
+    E_count = np.matrix(np.zeros([len(model.word2i), len(model.pos2i)]))
+    for row in tripel:
+        E_count[row[0], row[1]] = E_count[row[0], row[1]] + row[2]
+
+    # create E_prob matrix probability P(word, pos)
+    E_prob = np.nan_to_num(E_count / E_count.sum(axis=1))
+
+    # P(pos)
+    pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
+
+    #--------------------------------------------------------------------------------------------------------------
+    # same for pos-pairs
+    tag_pairs = T_DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine Tags to pairs
+
+    tag_freq = tag_freq.reset_index()
+    tag_freq.columns = ['tag', 'value']]
+
+    #tag_freq = tag_pairs.value_counts() / len(tag_pairs)
+    #tag_freq = pickle.load(open('HMM_tag_freq-90.pkl', 'rb'))
+
+
+    # create T_freq-matrix row: pos(i), column: pos(i-1)
+
+    tripel = tag_freq.apply(lambda x: translate_idx(x), axis=1)
+    T_freq = np.matrix(np.zeros([len(pos_h), len(pos_h)]))
+
+    for row in tripel:
+        T_freq[row[0], row[1]] = T_freq[row[0], row[1]] + row[2]
+
+    T_start = T_freq[pos2i_h[START_STATE], 1:-1]
+
+    # remove start and end state again
+    T_freq = T_freq[1:-1, 1:-1]
+
+    E_prob = pickle.load(open('E_prob_90.pkl', 'rb'))
+    E_prob = np.matrix(E_prob)
+    pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
+
+
+
+
+
 # find sequence of y that maximizes score
 training_data = data[:43757] #90%
 
@@ -302,7 +383,6 @@ words_used = words_used + [RARE_WORD]
 
 word2i = {word:i for (i,word) in enumerate(words_used)}
 pos2i  = {pos:i for (i,pos) in enumerate(pos)}
-
 
 def find_tag(tags, word_str, w):
     score = []
