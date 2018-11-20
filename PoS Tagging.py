@@ -70,6 +70,9 @@ class Baseline(object):
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i,word) in enumerate(words)}
 
+        self.E_prob = np.matrix([])
+        self.pi_y = np.matrix([])
+
         # TODO: YOUR CODE HERE
 
     def MAP(self, sentences):
@@ -79,8 +82,21 @@ class Baseline(object):
         :param sentences: iterable sequence of word sequences (sentences).
         :return: iterable sequence of PoS tag sequences.
         '''
+        tag = []
+        for (i, word_str) in enumerate(sentence):
+            try:
+                word_idx = self.word2i[word_str]  # finds the index for the word of interest
+            except KeyError:
+                word_idx = self.word2i[RARE_WORD]
+            pos_idx = np.multiply(self.pi_y, self.E_prob[word_idx]).argmax()
+            tag[i] = pos[pos_idx]
+        return(tag)
 
-        # TODO: YOUR CODE HERE
+bl = Baseline(pos, words, data[:100])
+bl.MAP(data[0][0])
+
+for (i, word) in enumerate(sentence):
+    print(i, word)
 
 ############################################################################
 #     Data Preprocessing
