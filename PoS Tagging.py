@@ -84,8 +84,9 @@ class Baseline(object):
         value = e_count.value
         return ([word_idx, pos_idx, value])
 
-    def MAP(self, sentence):
+    def predict_pos(self, sentence):
         """
+        MAP ALGORITHM
         Given an iterable sequence of word sequences, return the most probable
         assignment of PoS tags for these words.
         :param sentences: iterable sequence of word sequences (sentences).
@@ -148,63 +149,6 @@ def baseline_mle(training_set, model):
 #-----------------------------------------------------------------------------------------------------------------------
 
 
-words_count = pickle.load(open('words_count_90.pkl', 'rb'))
-E_prob = pickle.load(open('E_prob_90.pkl', 'rb'))
-
-pos_h = [START_STATE] + pos + [END_STATE]
-pos2i_h = {pos:i for (i,pos) in enumerate(pos_h)}
-tag_freq = pickle.load(open('HMM_tag_freq-90.pkl', 'rb'))
-
-tag_freq = tag_freq.reset_index()
-tag_freq.columns = ['tag', 'value']
-
-def translate_idx(tag_freq):
-    pos_str  = re.split("\|", tag_freq.tag)[0]
-    pos_r_idx  = pos2i_h[pos_str]
-    pos_str  = re.split("\|", tag_freq.tag)[1]
-    pos_c_idx  = pos2i_h[pos_str]
-    value = tag_freq.value
-    return([pos_r_idx, pos_c_idx, value])
-
-# create T_freq-matrix row: pos(i), column: pos(i-1)
-
-tripel = tag_freq.apply(lambda x: translate_idx(x), axis=1)
-T_freq = np.matrix(np.zeros([len(pos_h),len(pos_h)]))
-
-for row in tripel:
-    T_freq[row[0], row[1]] = T_freq[row[0], row[1]] + row[2]
-
-T_start = T_freq[pos2i_h[START_STATE],1:-1]
-
-# remove start and end state again
-T_freq = T_freq[1:-1,1:-1]
-
-
-E_prob = pickle.load(open('E_prob_90.pkl', 'rb'))
-E_prob = np.matrix(E_prob)
-pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
-
-def find_tag(word_str, tags, pi):
-    prev_tag = tags[-1]
-
-    if prev_tag == START_STATE:
-        T_freq_part = np.log(T_start)
-    else:
-        T_freq_part = np.log(T_freq[pos2i[prev_tag]])
-
-    try:
-        pi = pi.max() + np.log(E_prob[word2i[word_str]]) + T_freq_part
-    except KeyError:   # RARE_WORD
-        pi = pi.max() + np.log(E_prob[word2i[RARE_WORD]]) + T_freq_part
-
-    tag = pos[pi.argmax()]
-    return(tag)
-
-
-sentence = data[43830][1] #43830
-pd.Series(sentence).apply(lambda x: find_tag(x, tags, pi))
-
-    
 score = []
 a = 43758
 for i in range(a, a+1000):
@@ -275,15 +219,37 @@ class HMM(object):
         value = tag_freq.value
         return ([pos_r_idx, pos_c_idx, value])
 
-    def viterbi(self, sentences):
+    def predict_pos(self, sentence):
         '''
+        VITERBI ALGORITHM
         Given an iterable sequence of word sequences, return the most probable
         assignment of PoS tags for these words.
         :param sentences: iterable sequence of word sequences (sentences).
         :return: iterable sequence of PoS tag sequences.
         '''
+        tags = [START_STATE]
 
-        # TODO: YOUR CODE HERE
+        for (i, word_str) in enumerate(sentence):
+            prev_tag = tags[-1]
+
+            if prev_tag == START_STATE:
+                T_part = np.log(self.T_start)
+                pi     = np.zeros(3)
+            else:
+                T_part = np.log(self.T_prob[self.pos2i[prev_tag]])
+
+            try:
+                pi = pi.max() + np.log(self.E_prob[self.word2i[word_str]]) + T_part
+            except KeyError:  # RARE_WORD
+                pi = pi.max() + np.log(self.E_prob[self.word2i[RARE_WORD]]) + T_part
+
+            if pi.argmax() == (-1)*np.inf:   #Baseline Model
+                print('baseline')
+                pi = pi.max() + np.log(self.pi_y) + T_part
+
+            tags.append(pos[pi.argmax()])
+
+        return(tags[1:])
 
 
 def hmm_mle(training_set, model):
@@ -357,6 +323,10 @@ def hmm_mle(training_set, model):
 
 
 
+#-----------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
 
 
 # find sequence of y that maximizes score
@@ -587,7 +557,7 @@ def performance_test(test_set, model):
     score = []
     for i in range(0, len(test_set)):
         sentence = test_set[i][1]
-        tags = model.MAP(sentence)
+        tags = model.predict_pos(sentence)
 
         # to measure accuracy: (how many percent of pos were right)
         score_i = (np.array(tags) == np.array(test_set[i][0])).sum()/len(tags)
@@ -611,7 +581,7 @@ if __name__ == '__main__':
     # according to training set size and test set size
 
     #training_set = data[0:43757]  # 90% band of data 43757
-    training_set = data[:1000]
+    training_set = data[:10000]
     test_set = data[43758:]
 
     # words that were used in training set:
@@ -629,7 +599,9 @@ if __name__ == '__main__':
 
     #-------------------------------------------------------------------------------------------------------------------
     hmm = HMM(pos_tags=pos, words=words_used, training_set=training_set)
-
     hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_prob = hmm_mle(training_set, hmm)
+    tags = hmm.predict_pos(sentence=sentence)
 
+    score = performance_test(test_set, hmm)
+    #TODO: something wrong with hmm - score is 80% but at baseline is 87%
 
