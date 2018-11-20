@@ -51,155 +51,55 @@ def data_example(data_path='PoS_data.pickle',
 
 
 class Baseline(object):
-    '''
+    """
     The baseline model.
-    '''
+    """
 
     def __init__(self, pos_tags, words, training_set):
-        '''
+        """
         The init function of the baseline Model.
         :param pos_tags: the possible hidden states (POS tags)
         :param words: the possible emissions (words).
         :param training_set: A training set of sequences of POS-tags and words.
-        '''
+        """
 
         self.words = words
         self.pos_tags = pos_tags
         self.words_size = len(words)
         self.pos_size = len(pos_tags)
-        self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
-        self.word2i = {word:i for (i,word) in enumerate(words)}
+        self.pos2i = {pos:i for (i, pos) in enumerate(pos_tags)}
+        self.word2i = {word:i for (i, word) in enumerate(words + [RARE_WORD])}
 
         self.E_prob = np.matrix([])
         self.pi_y = np.matrix([])
 
-        # TODO: YOUR CODE HERE
+    def translate_idx(self, e_count):
+        pos_str = re.split("\|", e_count.e)[1]
+        pos_idx = self.pos2i[pos_str]
+        word_str = re.split("\|", e_count.e)[0]
+        try:
+            word_idx = self.word2i[word_str]
+        except KeyError:
+            word_idx = self.word2i[RARE_WORD]
+        value = e_count.value
+        return ([word_idx, pos_idx, value])
 
-    def MAP(self, sentences):
-        '''
+    def MAP(self, sentence):
+        """
         Given an iterable sequence of word sequences, return the most probable
         assignment of PoS tags for these words.
         :param sentences: iterable sequence of word sequences (sentences).
         :return: iterable sequence of PoS tag sequences.
-        '''
-        tag = []
+        """
+        tags = []
         for (i, word_str) in enumerate(sentence):
             try:
                 word_idx = self.word2i[word_str]  # finds the index for the word of interest
             except KeyError:
                 word_idx = self.word2i[RARE_WORD]
             pos_idx = np.multiply(self.pi_y, self.E_prob[word_idx]).argmax()
-            tag[i] = pos[pos_idx]
-        return(tag)
-
-bl = Baseline(pos, words, data[:100])
-bl.MAP(data[0][0])
-
-for (i, word) in enumerate(sentence):
-    print(i, word)
-
-############################################################################
-#     Data Preprocessing
-############################################################################
-training_data = data[0:43757]  # 90% band of data 43757
-
-DF = pd.DataFrame()
-for row in training_data:
-    mat = np.matrix([row[1]]).T
-    df = pd.DataFrame(mat)
-    DF = DF.append(df, ignore_index=True)
-
-words_count = DF[0].value_counts()
-#words_count.to_pickle('words_count_90.pkl')
-
-#words_count = pickle.load(open('words_count_90.pkl', 'rb'))
-
-words_idx_rare = (words_count <= 3)
-words_rare = words_count[words_idx_rare].index.tolist()  # 31928
-words_used = words_count[~words_idx_rare].index.tolist() # 14969
-words_used = words_used + [RARE_WORD]
-
-word2i = {word:i for (i,word) in enumerate(words_used)}
-pos2i  = {pos:i for (i,pos) in enumerate(pos)}
-
-DF = pd.DataFrame()
-for row in training_data:
-    mat = np.matrix([row[1], row[0]]).T
-    df = pd.DataFrame(mat)
-    DF = DF.append(df, ignore_index=True)
-
-e_pairs = DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1) # combine Tags to pairs
-
-e_count = e_pairs.value_counts()
-e_count = e_count.reset_index()
-e_count.columns = ['e', 'value']
-
-# index has format word_str|pos_str
-# now fill matrix: row=word - column = pos
-
-def translate_idx(e_count):
-    pos_str  = re.split("\|", e_count.e)[1]
-    pos_idx  = pos2i[pos_str]
-    word_str = re.split("\|", e_count.e)[0]
-    try:
-        word_idx = word2i[word_str]
-    except KeyError:
-        word_idx = word2i[RARE_WORD]
-    value = e_count.value
-    return([word_idx, pos_idx, value])
-
-# create e-count matrix
-tripel = e_count.apply(lambda x: translate_idx(x), axis=1)
-E_count = np.matrix(np.zeros([len(word2i),len(pos2i)]))
-for row in tripel:
-    E_count[row[0], row[1]] = E_count[row[0], row[1]] + row[2]
-
-#pd.DataFrame(E_count).to_pickle('baseline_E-count_20.pkl')
-
-#E_count = pickle.load(open('baseline_E-count_90.pkl', 'rb'))
-E_count = np.matrix(E_count)
-
-#words_count    = E_count.sum(axis=1) # for infrequent words
-#words_idx_rare = (words_count <= 0)
-#rare_idx_list  = words_idx_rare.flatten().tolist()[0]
-#words_rare     = list(compress(words, rare_idx_list))
-#used_idx_list  = (~words_idx_rare).flatten().tolist()[0]
-#words_used     = list(compress(words, used_idx_list))
-
-#reduce E_count to used words - remove rare words
-#E_count_used = E_count[used_idx_list, :]
-
-#create E-prob matrix probability P(pos, word)
-E_prob = np.nan_to_num(E_count / E_count.sum(axis=1))
-
-# P(pos)
-pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
-
-def Likelihood(word_str):
-    try:
-        word_idx = word2i[word_str]  # finds the index for the word of interest
-    except KeyError:
-        word_idx = word2i[RARE_WORD]
-    pos_idx = np.multiply(pi_y, E_prob[word_idx]).argmax()
-    pos_str = pos[pos_idx]
-    return(pos_str)
-
-
-score = []
-a = 43758
-for i in range(a, a+100):
-    tags = []
-    sentence = data[i][1]
-    for word_str in sentence:
-        tag = Likelihood(word_str)
-        tags.append(tag)
-
-    # to measure accuracy: (how many percent of pos were right)
-    score_i = (np.array(tags) == np.array(data[i][0])).sum()/len(data[i][0])
-    score.append(score_i)
-
-final_score = sum(score)/len(score)
-print(final_score)
+            tags.append(self.pos_tags[pos_idx])
+        return (tags)
 
 def baseline_mle(training_set, model):
     """
@@ -214,22 +114,39 @@ def baseline_mle(training_set, model):
             any other data structure you prefer.
     """
 
-    # TODO: YOUR CODE HERE
+    DF = pd.DataFrame()
+    for row in training_set:
+        mat = np.matrix([row[1], row[0]]).T
+        df = pd.DataFrame(mat)
+        DF = DF.append(df, ignore_index=True)
 
-'''
-DF = pd.DataFrame()
-for i in range(0,43757):
-    t = data[i][0]
-    mat = np.matrix([([START_STATE] + t), (t + [END_STATE])]).T
-    df = pd.DataFrame(mat)
-    DF = DF.append(df, ignore_index=True)
+    e_pairs = DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine pos-word
+    # pairs have format word_str|pos_str
+    e_count = e_pairs.value_counts()
+    e_count = e_count.reset_index()
+    e_count.columns = ['e', 'value']
 
-tag_pairs = DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1) # combine Tags to pairs
+    # translate pairs to numeric index-pairs for matrix
+    tripel = e_count.apply(lambda x: model.translate_idx(x), axis=1)
 
-tag_freq = tag_pairs.value_counts() / len(tag_pairs)
+    # fill matrix row = word, column = pos
+    E_count = np.matrix(np.zeros([len(model.word2i), len(model.pos2i)]))
+    for row in tripel:
+        E_count[row[0], row[1]] = E_count[row[0], row[1]] + row[2]
 
-pd.DataFrame(tag_freq).to_pickle('HMM_tag_freq-90.pkl')
-'''
+    # create E_prob matrix probability P(word, pos)
+    E_prob = np.nan_to_num(E_count / E_count.sum(axis=1))
+
+    # P(pos)
+    pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
+
+    return([E_prob, pi_y])
+
+#-----------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
+
 
 words_count = pickle.load(open('words_count_90.pkl', 'rb'))
 E_prob = pickle.load(open('E_prob_90.pkl', 'rb'))
@@ -564,6 +481,44 @@ def perceptron(training_set, initial_model, w0, eta=0.1, epochs=1):
     # TODO: YOUR CODE HERE
 
 
+def find_frequent_words(training_set, threshold=4):
+    """
+    :param training_set: an iterable sequence of sentences, each containing
+            both the words and the PoS tags of the sentence (as in the "data_example" function).
+    :param threshold: included, if threshold=4 it means that a word has to appear at least 4 times to be considered
+            in learning
+    :return: iterable sequence of words that appeared often enough in training set
+    """
+    DF = pd.DataFrame()
+    for row in training_set:
+        mat = np.matrix([row[1]]).T
+        df = pd.DataFrame(mat)
+        DF = DF.append(df, ignore_index=True)
+
+    words_count = DF[0].value_counts()
+    words_used = words_count[(words_count > threshold)].index.tolist()
+    return(words_used)
+
+
+def performance_test(test_set, model):
+    """
+    determines performance of model based on how many pos-tags were predicted correctly
+    :param test_set:
+    :param model:
+    :return: score: percentage of correct pos-tags
+    """
+    score = []
+    for i in range(0, len(test_set)):
+        sentence = test_set[i][1]
+        tags = model.MAP(sentence)
+
+        # to measure accuracy: (how many percent of pos were right)
+        score_i = (np.array(tags) == np.array(test_set[i][0])).sum()/len(tags)
+        score.append(score_i)
+
+    final_score = sum(score)/len(score)
+    print(final_score)
+
 if __name__ == '__main__':
 
     data_example()
@@ -574,4 +529,25 @@ if __name__ == '__main__':
         words = pickle.load(f)
     with open('all_PoS.pickle', 'rb') as f:
         pos = pickle.load(f)
-    # TODO: YOUR CODE HERE
+
+    # TODO: smarter way of choosing 90% of data
+    # according to training set size and test set size
+
+    training_set = data[0:43757]  # 90% band of data 43757
+    test_set = data[43758:]
+
+    # words that were used in training set:
+    # words_used = find_frequent_words(training_set)
+    # pd.Series(words_used).to_pickle('words_used_90.pickle')
+    words_used = load(open('words_used_90.pickle'))
+    words_used = pickle.load(open('words_used_90.pickle', 'rb')).tolist()
+
+    # define baseline model
+    bl = Baseline(pos_tags=pos, words=words_used, training_set=training_set)
+
+    # training for baseline model, find ML-estimates for transition and emission matrix
+    bl.E_prob, bl.pi_y = baseline_mle(training_set, bl)
+
+    score = performance_test(test_set, bl)
+
+
