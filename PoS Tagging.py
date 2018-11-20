@@ -1,12 +1,8 @@
 import pickle
 import pandas as pd
 import numpy as np
-import datetime
 import re
-from itertools import compress
-import os
 
-cwd = os.getcwd()
 
 START_STATE = '*START*'
 START_WORD = '*START*'
@@ -311,129 +307,6 @@ def hmm_mle(training_set, model):
 #-----------------------------------------------------------------------------------------------------------------------
 
 
-word2i = {word:i for (i,word) in enumerate(words_used + [RARE_WORD])}
-pos2i  = {pos:i for (i,pos) in enumerate(pos)}
-
-def find_tag(tags, word_str, w):
-    score = []
-    prev_tag = tags[-1]
-
-    try:
-        e_offset = len(pos2i)*word2i[word_str]      # e(|pos|*word(i))
-    except KeyError:
-        e_offset = len(pos2i)*word2i[RARE_WORD]     # e(|pos|*|words|) It's a rare word
-
-    if prev_tag == START_STATE:
-        t_offset = len(pos2i)*len(word2i) + len(pos2i)*len(pos2i)       # e(|words|*|pos|) + t(|pos|*|pos|)
-    else:
-        t_offset = len(pos2i)*len(word2i) + len(pos2i)*pos2i[prev_tag]  # e(|words|*|pos|) + t(|pos|*pos(i-1))
-
-    for i in range(0,len(pos2i)):  # to test which of the pos would give best result
-        e_idx = e_offset + i
-        t_idx = t_offset + i
-
-        try: 
-            score_i = w[e_idx]
-        except KeyError:
-            score_i = 0
-        try:
-            score_i = score_i + w[t_idx]
-        except KeyError:
-            score_i = score_i
-        score.append(score_i)
-    tag = pos[np.array(score).argmax()]
-    return(tag)
-
-
-def phi(sentence, tags):
-    phi_dict = {}
-    for i in range(0, len(tags)):
-        word_str = sentence[i]
-        pos_str = tags[i]
-
-        # handle RARE_WORDS
-        try:
-            e_idx = len(pos2i) * word2i[word_str] + pos2i[pos_str]
-        except KeyError:
-            e_idx = len(pos2i) * word2i[RARE_WORD] + pos2i[pos_str]
-
-        # handle START_STATE because is not included in pos2i
-        if i == 0:
-            t_offset = len(pos2i) * len(word2i) + len(pos2i) * len(pos2i)
-        else:
-            prev_tag = tags[i - 1]
-            t_offset = len(pos2i) * len(word2i) + len(pos2i) * pos2i[prev_tag]
-        t_idx = t_offset + pos2i[pos_str]
-
-        phi_i = {e_idx: 1, t_idx: 1}
-
-        for key in phi_i.keys():
-            try:
-                phi_dict[key] = phi_dict[key] + phi_i[key]
-            except KeyError:
-                phi_dict[key] = phi_i[key]
-
-    return (phi_dict)
-
-    
-def train_MEMM(training_data, eta):
-    w = {}
-    for i in range(0,len(training_data)):
-        sentence   = training_data[i][1]
-        tags_known = training_data[i][0]
-        
-        # most likely sequence of pos given the sentence
-        tags = [START_STATE]
-        for word_str in sentence:
-            tag = find_tag(tags, word_str, w)
-            tags.append(tag)
-        tags_est = tags[1:]
-        
-        
-        phi_known = phi(sentence = sentence, tags = tags_known)
-        phi_est   = phi(sentence = sentence, tags = tags_est)
-        
-        phi_diff = phi_known
-        for key in phi_est.keys():
-            try:
-                phi_diff[key] = phi_known[key] - phi_est[key]
-            except KeyError:
-                phi_diff[key] = -phi_est[key]
-        
-        for key in phi_diff.keys():
-            try:
-                w[key] = w[key] + eta*phi_diff[key]
-            except KeyError:
-                w[key] = eta*phi_diff[key]
-    return(w)
-    
-training_data = data[:43757] #90
-
-w = train_MEMM(training_data = training_set, eta = 0.2)
-# test if makes some sense
-w[len(pos2i)*word2i['the']+pos2i['DT']]
-w[len(pos2i)*word2i[',']+pos2i[',']]
-w[len(pos2i)*word2i['as']+pos2i['IN']]
-w[len(pos2i)*word2i['is']+pos2i['VBZ']]
-w[len(pos2i)*word2i[RARE_WORD]+pos2i['DT']]
-
-
-score = []
-a = 43758
-for i in range(a, a+261):
-    sentence = data[i][1]
-    
-    tags = [START_STATE]
-    tags = pd.Series(sentence).apply(lambda x: find_tag(tags,x,w))
-
-    # to measure accuracy: (how many percent of pos were right)
-    score_i = (np.array(tags) == np.array(data[i][0])).sum()/len(data[i][0])
-    score.append(score_i)
-
-final_score = sum(score)/len(score)
-print(final_score)
-
-
 class MEMM(object):
     '''
     The base Maximum Entropy Markov Model with log-linear transition functions.
@@ -642,7 +515,7 @@ if __name__ == '__main__':
     # according to training set size and test set size
 
     #training_set = data[0:43757]  # 90% band of data 43757
-    training_set = data[:10000]
+    training_set = data[:5000]
     test_set = data[43758:]
 
     # words that were used in training set:
@@ -650,6 +523,7 @@ if __name__ == '__main__':
     # pd.Series(words_used).to_pickle('words_used_90.pickle')
     words_used = pickle.load(open('words_used_90.pickle', 'rb')).tolist()
 
+    #-------------------------------------------------------------------------------------------------------------------
     # define baseline model
     bl = Baseline(pos_tags=pos, words=words_used, training_set=training_set)
 
