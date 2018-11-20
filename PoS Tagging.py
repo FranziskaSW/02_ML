@@ -448,6 +448,7 @@ class MEMM(object):
         :param phi: the feature mapping function, which accepts two PoS tags
                     and a word, and returns a list of indices that have a "1" in
                     the binary feature vector.
+        :param w: weights for prediction in form of dictionary
         '''
 
         self.words = words
@@ -457,13 +458,14 @@ class MEMM(object):
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i,word) in enumerate(words + [RARE_WORD])}
         self.phi = phi
+        self.w = {}
 
         # TODO: YOUR CODE HERE
         
         # something like numbers
 
 
-    def predict_pos(self, sentence, w):
+    def predict_pos(self, sentence):
         '''
         VITERBI ALGORITHM
         Given an iterable sequence of word sequences, return the most probable
@@ -472,6 +474,39 @@ class MEMM(object):
         :param w: a dictionary that maps a feature index to it's weight.
         :return: iterable sequence of POS tag sequences.
         '''
+        tags = [START_STATE]
+        len_pos, len_words = len(self.pos2i), len(self.word2i)
+
+        for (i, word_str) in enumerate(sentence):
+            score = []
+            prev_tag = tags[-1]
+
+            try:
+                e_offset = len_pos * self.word2i[word_str]  # e(|pos|*word(i))
+            except KeyError:
+                e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|) It's a rare word
+
+            if prev_tag == START_STATE:
+                t_offset = len_pos * len_words + len_pos * len_pos  # e(|words|*|pos|) + t(|pos|*|pos|)
+            else:
+                t_offset = len_pos * len_words + len_pos * pos2i[prev_tag]  # e(|words|*|pos|) + t(|pos|*pos(i-1))
+
+            for i in range(0, len_pos):  # to test which of the pos would give best result
+                e_idx = e_offset + i
+                t_idx = t_offset + i
+
+                try:
+                    score_i = self.w[e_idx]
+                except KeyError:
+                    score_i = 0
+                try:
+                    score_i = score_i + self.w[t_idx]
+                except KeyError:
+                    score_i = score_i
+                score.append(score_i)
+            tag = pos[np.array(score).argmax()]
+            tags.append(tag)
+        return (tags[1:])
 
 
 def phi(sentence, tags, model):
@@ -631,4 +666,17 @@ if __name__ == '__main__':
 
     score = performance_test(test_set, hmm)
     #TODO: something wrong with hmm - score is 80% but at baseline is 87%
+
+    #-------------------------------------------------------------------------------------------------------------------
+    memm = MEMM(pos_tags=pos, words=words_used, training_set=training_set, phi = 1)
+
+    memm.w = perceptron(training_set, memm)
+    memm.w[len(memm.pos2i) * memm.word2i['the'] + memm.pos2i['DT']]
+    memm.w[len(memm.pos2i) * memm.word2i[','] + memm.pos2i[',']]
+    memm.w[len(memm.pos2i) * memm.word2i['as'] + memm.pos2i['IN']]
+    memm.w[len(memm.pos2i) * memm.word2i['is'] + memm.pos2i['VBZ']]
+    memm.w[len(memm.pos2i) * memm.word2i['the'] + memm.pos2i['VBZ']]
+    memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['DT']]
+
+    score = performance_test(test_set, memm)
 
