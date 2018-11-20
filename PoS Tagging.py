@@ -148,24 +148,6 @@ def baseline_mle(training_set, model):
 #-----------------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------
 
-
-score = []
-a = 43758
-for i in range(a, a+1000):
-    sentence = data[i][1]
-    tags = [START_STATE]
-    tags_est = pd.Series(sentence).apply(lambda x: find_tag(x, tags, pi))
-
-    # to measure accuracy: (how many percent of pos were right)
-    score_i = (np.array(tags_est) == np.array(data[i][0])).sum()/len(data[i][0])
-    score.append(score_i)
-
-final_score = sum(score)/len(score)
-print(final_score)
-
-
-
-
         
 class HMM(object):
     '''
@@ -329,26 +311,7 @@ def hmm_mle(training_set, model):
 #-----------------------------------------------------------------------------------------------------------------------
 
 
-# find sequence of y that maximizes score
-training_data = data[:43757] #90%
-
-#DF = pd.DataFrame()
-#for row in training_data:
- #   mat = np.matrix([row[1]]).T
-  #  df = pd.DataFrame(mat)
-   # DF = DF.append(df, ignore_index=True)
-
-#words_count = DF[0].value_counts()
-#words_count.to_pickle('words_count_90.pkl')
-
-words_count = pickle.load(open('words_count_90.pkl', 'rb'))
-
-words_idx_rare = (words_count <= 3)
-words_rare = words_count[words_idx_rare].index.tolist()  # 31928
-words_used = words_count[~words_idx_rare].index.tolist() # 14969
-words_used = words_used + [RARE_WORD]
-
-word2i = {word:i for (i,word) in enumerate(words_used)}
+word2i = {word:i for (i,word) in enumerate(words_used + [RARE_WORD])}
 pos2i  = {pos:i for (i,pos) in enumerate(pos)}
 
 def find_tag(tags, word_str, w):
@@ -383,35 +346,34 @@ def find_tag(tags, word_str, w):
 
 
 def phi(sentence, tags):
-    
     phi_dict = {}
-    for i in range(0,len(tags)):
+    for i in range(0, len(tags)):
         word_str = sentence[i]
-        pos_str  = tags[i]
+        pos_str = tags[i]
 
         # handle RARE_WORDS
         try:
-            e_idx = len(pos2i)*word2i[word_str] + pos2i[pos_str]
+            e_idx = len(pos2i) * word2i[word_str] + pos2i[pos_str]
         except KeyError:
-            e_idx = len(pos2i)*word2i[RARE_WORD] + pos2i[pos_str]
+            e_idx = len(pos2i) * word2i[RARE_WORD] + pos2i[pos_str]
 
         # handle START_STATE because is not included in pos2i
         if i == 0:
-            t_offset = len(pos2i)*len(word2i) + len(pos2i)*len(pos2i)
+            t_offset = len(pos2i) * len(word2i) + len(pos2i) * len(pos2i)
         else:
-            prev_tag = tags[i-1]
-            t_offset = len(pos2i)*len(word2i) + len(pos2i)*pos2i[prev_tag]
+            prev_tag = tags[i - 1]
+            t_offset = len(pos2i) * len(word2i) + len(pos2i) * pos2i[prev_tag]
         t_idx = t_offset + pos2i[pos_str]
 
-        phi_i = {e_idx:1, t_idx:1}
-        
+        phi_i = {e_idx: 1, t_idx: 1}
+
         for key in phi_i.keys():
             try:
                 phi_dict[key] = phi_dict[key] + phi_i[key]
             except KeyError:
                 phi_dict[key] = phi_i[key]
-        
-    return(phi_dict)
+
+    return (phi_dict)
 
     
 def train_MEMM(training_data, eta):
@@ -445,9 +407,9 @@ def train_MEMM(training_data, eta):
                 w[key] = eta*phi_diff[key]
     return(w)
     
-training_data = data[:43757] #90%
+training_data = data[:43757] #90
 
-w = train_MEMM(training_data = training_data, eta = 0.2)
+w = train_MEMM(training_data = training_set, eta = 0.2)
 # test if makes some sense
 w[len(pos2i)*word2i['the']+pos2i['DT']]
 w[len(pos2i)*word2i[',']+pos2i[',']]
@@ -458,7 +420,7 @@ w[len(pos2i)*word2i[RARE_WORD]+pos2i['DT']]
 
 score = []
 a = 43758
-for i in range(a, a+4861):
+for i in range(a, a+261):
     sentence = data[i][1]
     
     tags = [START_STATE]
@@ -493,7 +455,7 @@ class MEMM(object):
         self.words_size = len(words)
         self.pos_size = len(pos_tags)
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
-        self.word2i = {word:i for (i,word) in enumerate(words)}
+        self.word2i = {word:i for (i,word) in enumerate(words + [RARE_WORD])}
         self.phi = phi
 
         # TODO: YOUR CODE HERE
@@ -501,8 +463,9 @@ class MEMM(object):
         # something like numbers
 
 
-    def viterbi(self, sentences, w):
+    def predict_pos(self, sentence, w):
         '''
+        VITERBI ALGORITHM
         Given an iterable sequence of word sequences, return the most probable
         assignment of POS tags for these words.
         :param sentences: iterable sequence of word sequences (sentences).
@@ -510,10 +473,49 @@ class MEMM(object):
         :return: iterable sequence of POS tag sequences.
         '''
 
-        # TODO: YOUR CODE HERE
+
+def phi(sentence, tags, model):
+    """
+    uses the words of a sentence to create the sum of the phi-functions as a dictionary
+    where only relevant indices are mapped to their value
+    :param sentence: iterable sequence of words of the sentence
+    :param tags: iterable sequence of tags
+    :return: phi as dictionary
+    """
+    phi_dict = {}
+    word2i = model.word2i
+    pos2i = model.pos2i
+
+    for i in range(0, len(tags)):
+        word_str = sentence[i]
+        pos_str = tags[i]
+
+        # handle RARE_WORDS
+        try:
+            e_idx = len(pos2i) * word2i[word_str] + pos2i[pos_str]
+        except KeyError:
+            e_idx = len(pos2i) * word2i[RARE_WORD] + pos2i[pos_str]
+
+        # handle START_STATE because is not included in pos2i
+        if i == 0:
+            t_offset = len(pos2i) * len(word2i) + len(pos2i) * len(pos2i)
+        else:
+            prev_tag = tags[i - 1]
+            t_offset = len(pos2i) * len(word2i) + len(pos2i) * pos2i[prev_tag]
+        t_idx = t_offset + pos2i[pos_str]
+
+        phi_i = {e_idx: 1, t_idx: 1}
+
+        for key in phi_i.keys():
+            try:
+                phi_dict[key] = phi_dict[key] + phi_i[key]
+            except KeyError:
+                phi_dict[key] = phi_i[key]
+
+    return (phi_dict)
 
 
-def perceptron(training_set, initial_model, w0, eta=0.1, epochs=1):
+def perceptron(training_set, model, w0={}, eta=0.1, epochs=1):
     """
     learn the weight vector of a log-linear model according to the training set.
     :param training_set: iterable sequence of sentences and their parts-of-speech.
@@ -524,8 +526,33 @@ def perceptron(training_set, initial_model, w0, eta=0.1, epochs=1):
     :param epochs: the amount of times to go over the entire training data (default is 1).
     :return: w, the learned weights vector for the MEMM.
     """
+    for i in range(0, len(training_set)):
+        sentence = training_set[i][1]
+        tags_known = training_set[i][0]
 
-    # TODO: YOUR CODE HERE
+        # most likely sequence of pos given the sentence
+        tags = [START_STATE]
+        for word_str in sentence:
+            tag = find_tag(tags, word_str, w)
+            tags.append(tag)
+        tags_est = tags[1:]
+
+        phi_known = phi(sentence=sentence, tags=tags_known, model=model)
+        phi_est = phi(sentence=sentence, tags=tags_est, model=model)
+
+        phi_diff = phi_known
+        for key in phi_est.keys():
+            try:
+                phi_diff[key] = phi_known[key] - phi_est[key]
+            except KeyError:
+                phi_diff[key] = -phi_est[key]
+
+        for key in phi_diff.keys():
+            try:
+                w[key] = w[key] + eta * phi_diff[key]
+            except KeyError:
+                w[key] = eta * phi_diff[key]
+    return (w)
 
 
 def find_frequent_words(training_set, threshold=4):
