@@ -489,7 +489,7 @@ class MEMM(object):
             if prev_tag == START_STATE:
                 t_offset = len_pos * len_words + len_pos * len_pos  # e(|words|*|pos|) + t(|pos|*|pos|)
             else:
-                t_offset = len_pos * len_words + len_pos * pos2i[prev_tag]  # e(|words|*|pos|) + t(|pos|*pos(i-1))
+                t_offset = len_pos * len_words + len_pos * self.pos2i[prev_tag]  # e(|words|*|pos|) + t(|pos|*pos(i-1))
 
             for i in range(0, len_pos):  # to test which of the pos would give best result
                 e_idx = e_offset + i
@@ -550,7 +550,7 @@ def phi(sentence, tags, model):
     return (phi_dict)
 
 
-def perceptron(training_set, model, w0={}, eta=0.1, epochs=1):
+def perceptron(training_set, model, eta=0.1, epochs=1):
     """
     learn the weight vector of a log-linear model according to the training set.
     :param training_set: iterable sequence of sentences and their parts-of-speech.
@@ -566,11 +566,7 @@ def perceptron(training_set, model, w0={}, eta=0.1, epochs=1):
         tags_known = training_set[i][0]
 
         # most likely sequence of pos given the sentence
-        tags = [START_STATE]
-        for word_str in sentence:
-            tag = find_tag(tags, word_str, w)
-            tags.append(tag)
-        tags_est = tags[1:]
+        tags_est = model.predict_pos(sentence)
 
         phi_known = phi(sentence=sentence, tags=tags_known, model=model)
         phi_est = phi(sentence=sentence, tags=tags_est, model=model)
@@ -584,10 +580,13 @@ def perceptron(training_set, model, w0={}, eta=0.1, epochs=1):
 
         for key in phi_diff.keys():
             try:
-                w[key] = w[key] + eta * phi_diff[key]
+                model.w[key] = model.w[key] + eta * phi_diff[key]
             except KeyError:
-                w[key] = eta * phi_diff[key]
-    return (w)
+                model.w[key] = eta * phi_diff[key]
+        # update w
+        #model.w = w
+        #w = model.w
+    #return (w)
 
 
 def find_frequent_words(training_set, threshold=4):
@@ -662,7 +661,6 @@ if __name__ == '__main__':
     #-------------------------------------------------------------------------------------------------------------------
     hmm = HMM(pos_tags=pos, words=words_used, training_set=training_set)
     hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_prob = hmm_mle(training_set, hmm)
-    tags = hmm.predict_pos(sentence=sentence)
 
     score = performance_test(test_set, hmm)
     #TODO: something wrong with hmm - score is 80% but at baseline is 87%
@@ -670,7 +668,7 @@ if __name__ == '__main__':
     #-------------------------------------------------------------------------------------------------------------------
     memm = MEMM(pos_tags=pos, words=words_used, training_set=training_set, phi = 1)
 
-    memm.w = perceptron(training_set, memm)
+    perceptron(training_set, memm)  # gets better the more often w
     memm.w[len(memm.pos2i) * memm.word2i['the'] + memm.pos2i['DT']]
     memm.w[len(memm.pos2i) * memm.word2i[','] + memm.pos2i[',']]
     memm.w[len(memm.pos2i) * memm.word2i['as'] + memm.pos2i['IN']]
