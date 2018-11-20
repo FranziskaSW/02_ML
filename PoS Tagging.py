@@ -243,7 +243,10 @@ class HMM(object):
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i,word) in enumerate(words + [RARE_WORD])}
 
-        # TODO: YOUR CODE HERE
+        self.E_prob = np.matrix([])
+        self.pi_y = np.matrix([])
+        self.T_prob = np.matrix([])
+        self.T_start = np.matrix([])
 
     def sample(self, n):
         '''
@@ -284,7 +287,6 @@ class HMM(object):
 
 
 def hmm_mle(training_set, model):
-    
     """
     a function for calculating the Maximum Likelihood estimation of the
     transition and emission probabilities for the standard multinomial HMM.
@@ -296,9 +298,6 @@ def hmm_mle(training_set, model):
             the probabilities in |PoS|x|PoS| and |PoS|x|Words| sized matrices, or
             any other data structure you prefer.
     """
-
-    # TODO: YOUR CODE HERE
-
     T_DF, E_DF = pd.DataFrame(), pd.DataFrame()
     for row in training_set:
         # transition pairs: (pos_i-1|pos_i)
@@ -308,16 +307,16 @@ def hmm_mle(training_set, model):
         # emission pairs: (word_i|pos_i)
         e = np.matrix([row[1], row[0]]).T
         e_df = pd.DataFrame(e)
-        E_DF = DF.append(df, ignore_index=True)
+        E_DF = E_DF.append(e_df, ignore_index=True)
 
-    e_pairs = DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine pos-word
+    e_pairs = E_DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine pos-word
     # pairs have format word_str|pos_str
     e_count = e_pairs.value_counts()
     e_count = e_count.reset_index()
     e_count.columns = ['e', 'value']
 
     # translate pairs to numeric index-pairs for matrix
-    tripel = e_count.apply(lambda x: model.translate_idx(x), axis=1)
+    tripel = e_count.apply(lambda x: model.translate_e_idx(x), axis=1)
 
     # fill matrix row = word, column = pos
     E_count = np.matrix(np.zeros([len(model.word2i), len(model.pos2i)]))
@@ -330,36 +329,31 @@ def hmm_mle(training_set, model):
     # P(pos)
     pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
 
-    return([E_prob, pi_y])
-
-
     #--------------------------------------------------------------------------------------------------------------
     # same for pos-pairs
+    model.pos2i = {pos:i for (i,pos) in enumerate([START_STATE] + model.pos_tags + [END_STATE])}
     tag_pairs = T_DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine Tags to pairs
 
-    tag_freq = tag_freq.reset_index()
-    tag_freq.columns = ['tag', 'value']]
-
-    #tag_freq = tag_pairs.value_counts() / len(tag_pairs)
+    tag_freq = tag_pairs.value_counts() / len(tag_pairs)
     #tag_freq = pickle.load(open('HMM_tag_freq-90.pkl', 'rb'))
-
+    tag_freq = tag_freq.reset_index()
+    tag_freq.columns = ['tag', 'value']
 
     # create T_freq-matrix row: pos(i), column: pos(i-1)
-
-    tripel = tag_freq.apply(lambda x: translate_idx(x), axis=1)
-    T_freq = np.matrix(np.zeros([len(pos_h), len(pos_h)]))
+    tripel = tag_freq.apply(lambda x: model.translate_t_idx(x), axis=1)
+    T_prob = np.matrix(np.zeros([len(model.pos2i), len(model.pos2i)]))
 
     for row in tripel:
-        T_freq[row[0], row[1]] = T_freq[row[0], row[1]] + row[2]
+        T_prob[row[0], row[1]] = T_prob[row[0], row[1]] + row[2]
 
-    T_start = T_freq[pos2i_h[START_STATE], 1:-1]
+    #biring T_freq on 44-pos-states size
+    T_start = T_prob[model.pos2i[START_STATE], 1:-1]
 
     # remove start and end state again
-    T_freq = T_freq[1:-1, 1:-1]
+    T_prob = T_prob[1:-1, 1:-1]
+    model.pos2i = {pos:i for (i,pos) in enumerate(model.pos_tags)}
 
-    E_prob = pickle.load(open('E_prob_90.pkl', 'rb'))
-    E_prob = np.matrix(E_prob)
-    pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
+    return([E_prob, pi_y, T_start, T_prob])
 
 
 
@@ -616,7 +610,8 @@ if __name__ == '__main__':
     # TODO: smarter way of choosing 90% of data
     # according to training set size and test set size
 
-    training_set = data[0:43757]  # 90% band of data 43757
+    #training_set = data[0:43757]  # 90% band of data 43757
+    training_set = data[:1000]
     test_set = data[43758:]
 
     # words that were used in training set:
@@ -631,5 +626,10 @@ if __name__ == '__main__':
     bl.E_prob, bl.pi_y = baseline_mle(training_set, bl)
 
     score = performance_test(test_set, bl)
+
+    #-------------------------------------------------------------------------------------------------------------------
+    hmm = HMM(pos_tags=pos, words=words_used, training_set=training_set)
+
+    hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_prob = hmm_mle(training_set, hmm)
 
 
