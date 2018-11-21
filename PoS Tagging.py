@@ -206,7 +206,7 @@ class HMM(object):
         :return: iterable sequence of PoS tag sequences.
         '''
         tags = []
-        sentence = data[10][1]
+        sentence = data[20020][1]
         word_str = sentence[0]
 
         try:
@@ -216,22 +216,24 @@ class HMM(object):
 
         pi = (np.log(self.T_start) + np.log(self.E_prob[self.word2i[word_str]])).T
 
+        argmax_list = []
+
         for i in range(1,len(sentence)):
             word_str = sentence[i]
             try:
                 self.word2i[word_str]
             except KeyError:
                 word_str = RARE_WORD
-            print(word_str)
-
-            # DT|DT, DT|NN, DT|vb...
-            # NN|DT, NN|NN, NN|VB...
 
             # TODO: check if summation is in right direction
-            a  = pi + np.log(self.T_prob).T + np.log(self.E_prob[self.word2i[word_str]])
-            pi = a.max(axis=1)
-            argmax = a.argmax(axis=1)
-    print(pi.T)
+            a  = pi + np.log(self.T_prob) + np.log(self.E_prob[self.word2i[word_str]])
+            pi = a.max(axis=0).T
+            argmax = a.argmax(axis=0)
+
+            if pi.max() == (-1)*np.inf:
+                print('------------MINUS_INFINITY----------------')
+                pi = np.log(self.pi_y) + np.log(self.E_prob[self.word2i[word_str]])
+            argmax_list.append(argmax[argmax > 0])
 
         return(tags)
 
@@ -330,7 +332,7 @@ def hmm_mle(training_set, model):
 
     #biring T_freq on 44-pos-states size
     T_start = T_prob[model.pos2i[START_STATE], 1:-1]
-
+    T_end   = T_prob[model.pos2i[END_STATE], 1:-1]
     # remove start and end state again
     T_prob = T_prob[1:-1, 1:-1]
     model.pos2i = {pos:i for (i,pos) in enumerate(model.pos_tags)}
@@ -668,7 +670,7 @@ if __name__ == '__main__':
     # according to training set size and test set size
 
     #training_set = data[0:43757]  # 90% band of data 43757
-    training_set = data[:1000]
+    training_set = data[:10000]
     test_set = data[43758:]
 
     # words that were used in training set:
