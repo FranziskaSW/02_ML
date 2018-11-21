@@ -343,24 +343,51 @@ class MEMM(object):
         :param w: a dictionary that maps a feature index to it's weight.
         :return: iterable sequence of POS tag sequences.
         '''
-        tags = [START_STATE]
         len_pos, len_words = len(self.pos2i), len(self.word2i)
         t_scores = []
 
-        for word_str in sentence:
-            print(word_str)
+        #calculate part for y_0 --> y_1 (since y_0 is known as START_STATE)
+
+        word_str = sentence[0]
+        score = []
+        try:
+            e_offset = len_pos * self.word2i[word_str]  # e(|pos|*word(i))
+        except KeyError:
+            e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|) It's a rare word
+
+        t_offset = len_pos * len_words + len_pos * len_pos
+
+        for i in range(0, len_pos):  # iterate over pos-tags of word_str (at position i)
+            e_idx = e_offset + i
+            t_idx = t_offset + i
+
+            try:
+                score_i = self.w[e_idx]
+            except KeyError:
+                score_i = 0
+            try:
+                score_i = score_i + self.w[t_idx]
+            except KeyError:
+                score_i = score_i
+            score.append(score_i)
+        score = np.matrix(score)
+        t_scores.append(score)
+
+        # now calculate transitions/emissions for different pos-tages now (i) and pos-tag of previous word (j)
+        for word_idx in range(1, len(sentence)):
+            word_str = sentence[word_idx]
             scores_matrix = np.zeros([len_pos, len_pos])
 
-            for i in range(0,len_pos): # PREVIOUS TAG
+            for j in range(0,len_pos): # PREVIOUS TAG
                 score = []
                 try:
                     e_offset = len_pos * self.word2i[word_str]  # e(|pos|*word(i))
                 except KeyError:
                     e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|) It's a rare word
 
-                t_offset = len_pos * len_words * self.pos2i[self.pos_tags[i]]
+                t_offset = len_pos * len_words * self.pos2i[self.pos_tags[j]]
 
-                for j in range(0, len_pos):  # to test which of the CURRENT POS would give best result
+                for i in range(0, len_pos):  # to test which of the CURRENT POS would give best result
                     e_idx = e_offset + i
                     t_idx = t_offset + i
 
@@ -373,8 +400,9 @@ class MEMM(object):
                     except KeyError:
                         score_i = score_i
                     score.append(score_i)
-                scores_matrix[i] = score
-        t_scores.append(scores_matrix)
+
+                scores_matrix[j] = score
+            t_scores.append(scores_matrix)
         return(t_scores)
 
 
