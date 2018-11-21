@@ -331,14 +331,54 @@ class MEMM(object):
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i,word) in enumerate(words + [RARE_WORD])}
         self.phi = phi
-        self.w = {}
-
-        # TODO: YOUR CODE HERE
-        
-        # something like numbers
+        self.w = {i:val for (i,val) in enumerate(np.random.randn(len(pos_tags)*len(pos_tags)+len(words_used)*len(pos_tags)))}
 
 
     def predict_pos(self, sentence):
+        '''
+        VITERBI ALGORITHM
+        Given an iterable sequence of word sequences, return the most probable
+        assignment of POS tags for these words.
+        :param sentences: iterable sequence of word sequences (sentences).
+        :param w: a dictionary that maps a feature index to it's weight.
+        :return: iterable sequence of POS tag sequences.
+        '''
+        tags = [START_STATE]
+        len_pos, len_words = len(self.pos2i), len(self.word2i)
+        t_scores = []
+
+        for word_str in sentence:
+            print(word_str)
+            scores_matrix = np.zeros([len_pos, len_pos])
+
+            for i in range(0,len_pos): # PREVIOUS TAG
+                score = []
+                try:
+                    e_offset = len_pos * self.word2i[word_str]  # e(|pos|*word(i))
+                except KeyError:
+                    e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|) It's a rare word
+
+                t_offset = len_pos * len_words * self.pos2i[self.pos_tags[i]]
+
+                for j in range(0, len_pos):  # to test which of the CURRENT POS would give best result
+                    e_idx = e_offset + i
+                    t_idx = t_offset + i
+
+                    try:
+                        score_i = self.w[e_idx]
+                    except KeyError:
+                        score_i = 0
+                    try:
+                        score_i = score_i + self.w[t_idx]
+                    except KeyError:
+                        score_i = score_i
+                    score.append(score_i)
+                scores_matrix[i] = score
+        t_scores.append(scores_matrix)
+        return(t_scores)
+
+
+    def predict_pos_old(self, sentence):
         '''
         VITERBI ALGORITHM
         Given an iterable sequence of word sequences, return the most probable
@@ -382,7 +422,7 @@ class MEMM(object):
         return (tags[1:])
 
 
-def phi(sentence, tags, model):
+def phi_old(sentence, tags, model):
     """
     uses the words of a sentence to create the sum of the phi-functions as a dictionary
     where only relevant indices are mapped to their value
@@ -422,6 +462,43 @@ def phi(sentence, tags, model):
 
     return (phi_dict)
 
+def perceptron_old(training_set, model, eta=0.1, epochs=1):
+    """
+    learn the weight vector of a log-linear model according to the training set.
+    :param training_set: iterable sequence of sentences and their parts-of-speech.
+    :param initial_model: an initial MEMM object, containing among other things
+            the phi feature mapping function.
+    :param w0: an initial weights vector.
+    :param eta: the learning rate for the perceptron algorithm.
+    :param epochs: the amount of times to go over the entire training data (default is 1).
+    :return: w, the learned weights vector for the MEMM.
+    """
+    for i in range(0, len(training_set)):
+        sentence = training_set[i][1]
+        tags_known = training_set[i][0]
+
+        # most likely sequence of pos given the sentence
+        tags_est = model.predict_pos(sentence)
+
+        phi_known = phi(sentence=sentence, tags=tags_known, model=model)
+        phi_est = phi(sentence=sentence, tags=tags_est, model=model)
+
+        phi_diff = phi_known
+        for key in phi_est.keys():
+            try:
+                phi_diff[key] = phi_known[key] - phi_est[key]
+            except KeyError:
+                phi_diff[key] = -phi_est[key]
+
+        for key in phi_diff.keys():
+            try:
+                model.w[key] = model.w[key] + eta * phi_diff[key]
+            except KeyError:
+                model.w[key] = eta * phi_diff[key]
+        # update w
+        #model.w = w
+        #w = model.w
+    #return (w)
 
 def perceptron(training_set, model, eta=0.1, epochs=1):
     """
@@ -515,7 +592,7 @@ if __name__ == '__main__':
     # according to training set size and test set size
 
     #training_set = data[0:43757]  # 90% band of data 43757
-    training_set = data[:5000]
+    training_set = data[:10]
     test_set = data[43758:]
 
     # words that were used in training set:
@@ -547,7 +624,6 @@ if __name__ == '__main__':
     memm.w[len(memm.pos2i) * memm.word2i[','] + memm.pos2i[',']]
     memm.w[len(memm.pos2i) * memm.word2i['as'] + memm.pos2i['IN']]
     memm.w[len(memm.pos2i) * memm.word2i['is'] + memm.pos2i['VBZ']]
-    memm.w[len(memm.pos2i) * memm.word2i['the'] + memm.pos2i['VBZ']]
     memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['DT']]
 
     score = performance_test(test_set, memm)
