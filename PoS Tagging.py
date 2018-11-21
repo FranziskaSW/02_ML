@@ -205,6 +205,44 @@ class HMM(object):
         :param sentences: iterable sequence of word sequences (sentences).
         :return: iterable sequence of PoS tag sequences.
         '''
+        tags = []
+        sentence = data[10][1]
+        word_str = sentence[0]
+
+        try:
+            self.word2i[word_str]
+        except KeyError:
+            word_str = RARE_WORD
+
+        pi = (np.log(self.T_start) + np.log(self.E_prob[self.word2i[word_str]])).T
+
+        for i in range(1,len(sentence)):
+            word_str = sentence[i]
+            try:
+                self.word2i[word_str]
+            except KeyError:
+                word_str = RARE_WORD
+            print(word_str)
+
+            # DT|DT, DT|NN, DT|vb...
+            # NN|DT, NN|NN, NN|VB...
+
+            # TODO: check if summation is in right direction
+            a  = pi + np.log(self.T_prob).T + np.log(self.E_prob[self.word2i[word_str]])
+            pi = a.max(axis=1)
+            argmax = a.argmax(axis=1)
+    print(pi.T)
+
+        return(tags)
+
+    def predict_pos_old(self, sentence):
+        '''
+        VITERBI ALGORITHM
+        Given an iterable sequence of word sequences, return the most probable
+        assignment of PoS tags for these words.
+        :param sentences: iterable sequence of word sequences (sentences).
+        :return: iterable sequence of PoS tag sequences.
+        '''
         tags = [START_STATE]
 
         for (i, word_str) in enumerate(sentence):
@@ -405,6 +443,16 @@ class MEMM(object):
             t_scores.append(scores_matrix)
         return(t_scores)
 
+k = predict_pos(memm, sentence)
+
+np.multiply(k[0].T, k[1])
+
+res = []
+mat = k[2]
+for i in range(0, len_pos):
+    a = mat[i]
+    t = np.multiply(a, k[2])
+    res.append(t)
 
     def predict_pos_old(self, sentence):
         '''
@@ -620,7 +668,7 @@ if __name__ == '__main__':
     # according to training set size and test set size
 
     #training_set = data[0:43757]  # 90% band of data 43757
-    training_set = data[:10]
+    training_set = data[:1000]
     test_set = data[43758:]
 
     # words that were used in training set:
