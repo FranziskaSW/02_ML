@@ -47,6 +47,10 @@ def data_example(data_path='PoS_data.pickle',
     print(pos)
 
 
+#########################################################################################
+#                                   Baseline Model                                      #
+#########################################################################################
+
 class Baseline(object):
     """
     The baseline model.
@@ -67,10 +71,16 @@ class Baseline(object):
         self.pos2i = {pos:i for (i, pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i, word) in enumerate(words + [RARE_WORD])}
 
-        self.E_prob = np.matrix([])
-        self.pi_y = np.matrix([])
+        self.E_prob = np.matrix([])  # for emission matrix (|words|*|pos|)
+        self.pi_y = np.matrix([])    # for probability of pos
+                                     # both are updated through training (baseline_mle)
 
     def translate_idx(self, e_count):
+        """
+        Translates the word-pos-string pairs into indeces to fill E_prob matrix
+        :param e_count: string type index of word-pos pair and count
+        :return: list of indeces and count-value to fill E_prob matrix
+        """
         pos_str = re.split("\|", e_count.e)[1]
         pos_idx = self.pos2i[pos_str]
         word_str = re.split("\|", e_count.e)[0]
@@ -84,17 +94,17 @@ class Baseline(object):
     def predict_pos(self, sentence):
         """
         MAP ALGORITHM
-        Given an iterable sequence of word sequences, return the most probable
+        Given an iterable sequence of word sequence, return the most probable
         assignment of PoS tags for these words.
-        :param sentences: iterable sequence of word sequences (sentences).
+        :param sentences: iterable sequence of word sequence (sentence).
         :return: iterable sequence of PoS tag sequences.
         """
         tags = []
-        for (i, word_str) in enumerate(sentence):
+        for word_str in sentence:
             try:
                 word_idx = self.word2i[word_str]  # finds the index for the word of interest
-            except KeyError:
-                word_idx = self.word2i[RARE_WORD]
+            except KeyError:                      # if word is not in dictionary
+                word_idx = self.word2i[RARE_WORD] # handle it as RARE_WORD
             pos_idx = np.multiply(self.pi_y, self.E_prob[word_idx]).argmax()
             tags.append(self.pos_tags[pos_idx])
         return (tags)
@@ -113,15 +123,16 @@ def baseline_mle(training_set, model):
     """
 
     DF = pd.DataFrame()
-    for row in training_set:
-        mat = np.matrix([row[1], row[0]]).T
-        df = pd.DataFrame(mat)
-        DF = DF.append(df, ignore_index=True)
+    for row in training_set:                  # for every entry of the training data
+        mat = np.matrix([row[1], row[0]]).T   # combine the word with the pos-tag in matrix
+        df = pd.DataFrame(mat)                #
+        DF = DF.append(df, ignore_index=True) # create pd.DataFrame to use apply-functions
 
     e_pairs = DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine pos-word
-    # pairs have format word_str|pos_str
-    e_count = e_pairs.value_counts()
-    e_count = e_count.reset_index()
+                                              # output is a pd.Series of index-string-pairs
+                                              # pairs have format word_str|pos_str
+    e_count = e_pairs.value_counts()          # count how often every pair appears
+    e_count = e_count.reset_index()           #
     e_count.columns = ['e', 'value']
 
     # translate pairs to numeric index-pairs for matrix
@@ -135,16 +146,16 @@ def baseline_mle(training_set, model):
     # create E_prob matrix probability P(word, pos)
     E_prob = np.nan_to_num(E_count / E_count.sum(axis=1))
 
-    # P(pos)
+    # P(pos): Probability of pos
     pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
 
-    return([E_prob, pi_y])
+    # update model
+    model.E_prob = E_prob
+    model.pi_y = pi_y
 
-#-----------------------------------------------------------------------------------------------------------------------
-#-----------------------------------------------------------------------------------------------------------------------
-#-----------------------------------------------------------------------------------------------------------------------
-#-----------------------------------------------------------------------------------------------------------------------
-
+#########################################################################################
+#                            Hidden Markov Model (HMM)                                  #
+#########################################################################################
         
 class HMM(object):
     '''
@@ -166,25 +177,25 @@ class HMM(object):
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i,word) in enumerate(words + [RARE_WORD])}
 
-        self.E_prob = np.matrix([])
-        self.pi_y = np.matrix([])
-        self.T_prob = np.matrix([])
-        self.T_start = np.matrix([])
-        self.T_end = np.matrix([])
+        self.E_prob = np.matrix([])    # for emission matrix (|words|*|pos|)
+        self.pi_y = np.matrix([])      # for probability of pos
+        self.T_prob = np.matrix([])    # for transition matrix (|pos|*|pos|)
+        self.T_start = np.matrix([])   # for transition of START_STATE to first word
+        self.T_end = np.matrix([])     # for transition of last word to END_STATE
+                                       # all are updated through training (baseline_mle)
 
     def sample(self, n):
         '''
-        Sample n sequences of words from the HMM.
-        :return: A list of word sequences.
+        Sample sequence of n words from the HMM.
+        :return: A list of word sequence.
         '''
         tags = []
         words = []
-        word_str = 'the'
-        self = hmm
-        # TODO: YOUR CODE HERE
+        word_str = 'his'
+
         a = np.log(self.T_start) + np.log(self.E_prob[self.word2i[word_str]])
-        pos_idx = a.argmax().item(0)
-        pos_str= self.pos_tags[pos_idx]
+        pos_idx = a.argmax().item(0)          # which pos leads to maximum value
+        pos_str= self.pos_tags[pos_idx]       #
         tags.append(pos_str)
         words.append(word_str)
 
@@ -198,6 +209,7 @@ class HMM(object):
             pos_str = self.pos_tags[pos_idx]
             words.append(word_str)
             tags.append(pos_str)
+        return(words)
 
 
     def translate_e_idx(self, e_count):
@@ -597,16 +609,14 @@ if __name__ == '__main__':
     data = pickle.load(open('data.pickle', 'rb'))
     data = data.tolist()
 
-    #training_set = data[0:43757]  # 90% band of data 43757
-    training_set = data[0:34033]   # 70% as training_set 34033
-    training_set = data[0:34033]
-    test_set = data[43758:]        # last 10% of training_set
-    test_set = data[43758:(43758+1000)]
-
+    #training_set = data[0:43757]  # 90% of data
+    training_set = data[0:24309]   # 50% of data
+    training_set = data[0:12155]   # 25% of data
+    test_set = data[43758:]        # last 10% of data
     # words that were used in training set:
     words_used = find_frequent_words(training_set)
     pd.Series(words_used).to_pickle('words_used.pickle')
-    words_used = pickle.load(open('words_used.pickle', 'rb')).tolist()
+    #words_used = pickle.load(open('words_used.pickle', 'rb')).tolist()
 
     #-------------------------------------------------------------------------------------------------------------------
     # define baseline model
@@ -614,21 +624,23 @@ if __name__ == '__main__':
 
     # training for baseline model, find ML-estimates for transition and emission matrix
     bl.E_prob, bl.pi_y = baseline_mle(training_set, bl)
+    pd.DataFrame(bl.E_prob).to_pickle('bl_E_prob_50.pickle')
+    pd.DataFrame(bl.pi_y).to_pickle('bl_pi_y_50.pickle')
 
-    score = performance_test(test_set, bl)
-    pd.DataFrame(bl.E_prob).to_pickle('bl_E_prob_70.pickle')
-    pd.DataFrame(bl.pi_y).to_pickle('bl_pi_y_70.pickle')
+    score = performance_test(test_set, bl) # 0.8663122861529187
+    print(score)
 
     #-------------------------------------------------------------------------------------------------------------------
     hmm = HMM(pos_tags=pos, words=words_used, training_set=training_set)
     hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_end, hmm.T_prob = hmm_mle(training_set, hmm)
-    pd.DataFrame(hmm.E_prob).to_pickle('hmm_E_prob_70.pickle')
-    pd.DataFrame(hmm.T_start).to_pickle('hmm_T_start_70.pickle')
-    pd.DataFrame(hmm.T_end).to_pickle('hmm_T_end_70.pickle')
-    pd.DataFrame(hmm.T_prob).to_pickle('hmm_T_prob_70.pickle')
-    pd.DataFrame(hmm.pi_y).to_pickle('hmm_pi_y_70.pickle')
+    pd.DataFrame(hmm.E_prob).to_pickle('hmm_E_prob_50.pickle')
+    pd.DataFrame(hmm.T_start).to_pickle('hmm_T_start_50.pickle')
+    pd.DataFrame(hmm.T_end).to_pickle('hmm_T_end_50.pickle')
+    pd.DataFrame(hmm.T_prob).to_pickle('hmm_T_prob_50.pickle')
+    pd.DataFrame(hmm.pi_y).to_pickle('hmm_pi_y_50.pickle')
 
-    score = performance_test(test_set, hmm)
+    score = performance_test(test_set, hmm) # 0.8989316537845912
+    print(score)
 
     #-------------------------------------------------------------------------------------------------------------------
     memm = MEMM(pos_tags=pos, words=words_used, training_set=training_set, phi = 1)
@@ -648,4 +660,5 @@ if __name__ == '__main__':
     memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['NN']]
 
     score = performance_test(test_set, memm)
+    print(score)
 
