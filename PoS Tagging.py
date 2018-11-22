@@ -2,7 +2,7 @@ import pickle
 import pandas as pd
 import numpy as np
 import re
-
+import random
 
 START_STATE = '*START*'
 START_WORD = '*START*'
@@ -427,8 +427,8 @@ class MEMM(object):
         for i in range(1, len(t_scores)):
             t_i = t_scores[i]
             a = pi + t_i
-            pi = a.max(axis=0).T
-            argmax = a.argmax(axis=0)
+            pi = a.max(axis=1)
+            argmax = a.argmax(axis=1).T
 
             df = pd.DataFrame(argmax.T)
             val_count = df[0].value_counts()
@@ -567,19 +567,21 @@ if __name__ == '__main__':
     data_example()
 
     # shuffle data since we don't know how it was generated
-    random.shuffle(data)
-    pd.Series(data).to_pickle('data.pickle')
-    #data = pickle.load(open('data.pickle', 'rb'))
-    #data = data.tolist()
+    # random.shuffle(data)
+    # pd.Series(data).to_pickle('data.pickle')
+    data = pickle.load(open('data.pickle', 'rb'))
+    data = data.tolist()
 
     #training_set = data[0:43757]  # 90% band of data 43757
     training_set = data[0:34033]   # 70% as training_set 34033
+    training_set = data[0:1000]
     test_set = data[43758:]        # last 10% of training_set
+    test_set = data[43758:(43758+100)]
 
     # words that were used in training set:
-    words_used = find_frequent_words(training_set)
-    pd.Series(words_used).to_pickle('words_used_90.pickle')
-    #words_used = pickle.load(open('words_used_90.pickle', 'rb')).tolist()
+    # words_used = find_frequent_words(training_set)
+    # pd.Series(words_used).to_pickle('words_used_90.pickle')
+    words_used = pickle.load(open('words_used_90.pickle', 'rb')).tolist()
 
     #-------------------------------------------------------------------------------------------------------------------
     # define baseline model
@@ -589,17 +591,29 @@ if __name__ == '__main__':
     bl.E_prob, bl.pi_y = baseline_mle(training_set, bl)
 
     score = performance_test(test_set, bl)
+    pd.DataFrame(bl.E_prob).to_pickle('bl_E_prob_70.pickle')
+    pd.DataFrame(bl.pi_y).to_pickle('bl_pi_y_70.pickle')
 
     #-------------------------------------------------------------------------------------------------------------------
     hmm = HMM(pos_tags=pos, words=words_used, training_set=training_set)
     hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_prob = hmm_mle(training_set, hmm)
+    pd.DataFrame(hmm.E_prob).to_pickle('hmm_E_prob_70.pickle')
+    pd.DataFrame(hmm.T_start).to_pickle('hmm_T_start_70.pickle')
+    pd.DataFrame(hmm.T_prob).to_pickle('hmm_T_prob_70.pickle')
+    pd.DataFrame(hmm.pi_y).to_pickle('hmm_pi_y_70.pickle')
 
     score = performance_test(test_set, hmm)
 
     #-------------------------------------------------------------------------------------------------------------------
     memm = MEMM(pos_tags=pos, words=words_used, training_set=training_set, phi = 1)
 
+    # training and save training parameters (w)
     perceptron(training_set, memm)  # gets better the more often w
+    with open('memm_w.pickle', 'wb') as f:
+        pickle.dump(memm.w, f, protocol=pickle.HIGHEST_PROTOCOL)
+    with open('memm_w.pickle', 'rb') as f:
+        memm.w = pickle.load(f)
+
     memm.w[len(memm.pos2i) * memm.word2i['the'] + memm.pos2i['DT']]
     memm.w[len(memm.pos2i) * memm.word2i[','] + memm.pos2i[',']]
     memm.w[len(memm.pos2i) * memm.word2i['as'] + memm.pos2i['IN']]
