@@ -380,7 +380,7 @@ class MEMM(object):
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i,word) in enumerate(words + [RARE_WORD])}
         self.phi = phi
-        self.w = {i:val for (i,val) in enumerate(np.random.randn(len(pos_tags)*len(pos_tags)+len(words_used)*len(pos_tags)))}
+        self.w = {} #{i:val for (i,val) in enumerate(np.random.randn(len(pos_tags)*len(pos_tags)+len(words_used)*len(pos_tags)))}
 
 
     def predict_pos(self, sentence):
@@ -452,19 +452,32 @@ class MEMM(object):
 
                 scores_matrix[j] = score
             t_scores.append(scores_matrix)
-        return(t_scores)
 
-k = predict_pos(memm, sentence)
+        pi = t_scores[0].T
+        argmax = pi.argmax()
+        argmax_list = []
+        argmax_list.append(argmax)
 
-np.multiply(k[0].T, k[1])
+        for i in range(1, len(t_scores)):
+            t_i = t_scores[i]
+            a = pi + t_i
+            pi = a.max(axis=0).T
+            argmax = a.argmax(axis=0)
 
-res = []
-mat = k[2]
-for i in range(0, len_pos):
-    a = mat[i]
-    t = np.multiply(a, k[2])
-    res.append(t)
+            df = pd.DataFrame(argmax.T)
+            val_count = df[0].value_counts()
+            value = val_count.index[0]
+            argmax_list.append(value)
 
+        tags = []
+        for i in argmax_list:
+            tag_i = self.pos_tags[i]
+            tags.append(tag_i)
+
+        return(tags)
+
+
+# asdasda
     def predict_pos_old(self, sentence):
         '''
         VITERBI ALGORITHM
@@ -509,7 +522,8 @@ for i in range(0, len_pos):
         return (tags[1:])
 
 
-def phi_old(sentence, tags, model):
+
+def phi(sentence, tags, model):
     """
     uses the words of a sentence to create the sum of the phi-functions as a dictionary
     where only relevant indices are mapped to their value
@@ -549,43 +563,46 @@ def phi_old(sentence, tags, model):
 
     return (phi_dict)
 
-def perceptron_old(training_set, model, eta=0.1, epochs=1):
+
+def phi_old(sentence, tags, model):
     """
-    learn the weight vector of a log-linear model according to the training set.
-    :param training_set: iterable sequence of sentences and their parts-of-speech.
-    :param initial_model: an initial MEMM object, containing among other things
-            the phi feature mapping function.
-    :param w0: an initial weights vector.
-    :param eta: the learning rate for the perceptron algorithm.
-    :param epochs: the amount of times to go over the entire training data (default is 1).
-    :return: w, the learned weights vector for the MEMM.
+    uses the words of a sentence to create the sum of the phi-functions as a dictionary
+    where only relevant indices are mapped to their value
+    :param sentence: iterable sequence of words of the sentence
+    :param tags: iterable sequence of tags
+    :return: phi as dictionary
     """
-    for i in range(0, len(training_set)):
-        sentence = training_set[i][1]
-        tags_known = training_set[i][0]
+    phi_dict = {}
+    word2i = model.word2i
+    pos2i = model.pos2i
 
-        # most likely sequence of pos given the sentence
-        tags_est = model.predict_pos(sentence)
+    for i in range(0, len(tags)):
+        word_str = sentence[i]
+        pos_str = tags[i]
 
-        phi_known = phi(sentence=sentence, tags=tags_known, model=model)
-        phi_est = phi(sentence=sentence, tags=tags_est, model=model)
+        # handle RARE_WORDS
+        try:
+            e_idx = len(pos2i) * word2i[word_str] + pos2i[pos_str]
+        except KeyError:
+            e_idx = len(pos2i) * word2i[RARE_WORD] + pos2i[pos_str]
 
-        phi_diff = phi_known
-        for key in phi_est.keys():
+        # handle START_STATE because is not included in pos2i
+        if i == 0:
+            t_offset = len(pos2i) * len(word2i) + len(pos2i) * len(pos2i)
+        else:
+            prev_tag = tags[i - 1]
+            t_offset = len(pos2i) * len(word2i) + len(pos2i) * pos2i[prev_tag]
+        t_idx = t_offset + pos2i[pos_str]
+
+        phi_i = {e_idx: 1, t_idx: 1}
+
+        for key in phi_i.keys():
             try:
-                phi_diff[key] = phi_known[key] - phi_est[key]
+                phi_dict[key] = phi_dict[key] + phi_i[key]
             except KeyError:
-                phi_diff[key] = -phi_est[key]
+                phi_dict[key] = phi_i[key]
 
-        for key in phi_diff.keys():
-            try:
-                model.w[key] = model.w[key] + eta * phi_diff[key]
-            except KeyError:
-                model.w[key] = eta * phi_diff[key]
-        # update w
-        #model.w = w
-        #w = model.w
-    #return (w)
+    return (phi_dict)
 
 def perceptron(training_set, model, eta=0.1, epochs=1):
     """
@@ -679,7 +696,7 @@ if __name__ == '__main__':
     # according to training set size and test set size
 
     #training_set = data[0:43757]  # 90% band of data 43757
-    training_set = data[:10000]
+    training_set = data[:1000]
     test_set = data[43758:]
 
     # words that were used in training set:
@@ -712,6 +729,7 @@ if __name__ == '__main__':
     memm.w[len(memm.pos2i) * memm.word2i['as'] + memm.pos2i['IN']]
     memm.w[len(memm.pos2i) * memm.word2i['is'] + memm.pos2i['VBZ']]
     memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['DT']]
+    memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['NN']]
 
     score = performance_test(test_set, memm)
 
