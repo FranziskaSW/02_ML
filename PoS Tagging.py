@@ -226,7 +226,6 @@ class HMM(object):
             except KeyError:
                 word_str = RARE_WORD
 
-            # TODO: check if summation is in right direction
             a  = pi + np.log(self.T_prob) + np.log(self.E_prob[self.word2i[word_str]])
             pi = a.max(axis=0).T
             argmax = pi.argmax(axis=0).item(0)
@@ -245,39 +244,6 @@ class HMM(object):
             tags.append(tag_i)
 
         return(tags)
-
-    def predict_pos_old(self, sentence):
-        '''
-        VITERBI ALGORITHM
-        Given an iterable sequence of word sequences, return the most probable
-        assignment of PoS tags for these words.
-        :param sentences: iterable sequence of word sequences (sentences).
-        :return: iterable sequence of PoS tag sequences.
-        '''
-        tags = [START_STATE]
-
-        for (i, word_str) in enumerate(sentence):
-            prev_tag = tags[-1]
-
-            if prev_tag == START_STATE:
-                T_part = np.log(self.T_start)
-                pi     = np.zeros(3)
-            else:
-                T_part = np.log(self.T_prob[self.pos2i[prev_tag]])
-
-            try:
-                pi = pi.max() + np.log(self.E_prob[self.word2i[word_str]]) + T_part
-            except KeyError:  # RARE_WORD
-                pi = pi.max() + np.log(self.E_prob[self.word2i[RARE_WORD]]) + T_part
-
-            if pi.argmax() == (-1)*np.inf:   #Baseline Model
-                print('baseline')
-                pi = pi.max() + np.log(self.pi_y) + T_part
-
-            tags.append(pos[pi.argmax()])
-
-        return(tags[1:])
-
 
 def hmm_mle(training_set, model):
     """
@@ -477,94 +443,7 @@ class MEMM(object):
         return(tags)
 
 
-# asdasda
-    def predict_pos_old(self, sentence):
-        '''
-        VITERBI ALGORITHM
-        Given an iterable sequence of word sequences, return the most probable
-        assignment of POS tags for these words.
-        :param sentences: iterable sequence of word sequences (sentences).
-        :param w: a dictionary that maps a feature index to it's weight.
-        :return: iterable sequence of POS tag sequences.
-        '''
-        tags = [START_STATE]
-        len_pos, len_words = len(self.pos2i), len(self.word2i)
-
-        for (i, word_str) in enumerate(sentence):
-            score = []
-            prev_tag = tags[-1]
-
-            try:
-                e_offset = len_pos * self.word2i[word_str]  # e(|pos|*word(i))
-            except KeyError:
-                e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|) It's a rare word
-
-            if prev_tag == START_STATE:
-                t_offset = len_pos * len_words + len_pos * len_pos  # e(|words|*|pos|) + t(|pos|*|pos|)
-            else:
-                t_offset = len_pos * len_words + len_pos * self.pos2i[prev_tag]  # e(|words|*|pos|) + t(|pos|*pos(i-1))
-
-            for i in range(0, len_pos):  # to test which of the pos would give best result
-                e_idx = e_offset + i
-                t_idx = t_offset + i
-
-                try:
-                    score_i = self.w[e_idx]
-                except KeyError:
-                    score_i = 0
-                try:
-                    score_i = score_i + self.w[t_idx]
-                except KeyError:
-                    score_i = score_i
-                score.append(score_i)
-            tag = pos[np.array(score).argmax()]
-            tags.append(tag)
-        return (tags[1:])
-
-
-
 def phi(sentence, tags, model):
-    """
-    uses the words of a sentence to create the sum of the phi-functions as a dictionary
-    where only relevant indices are mapped to their value
-    :param sentence: iterable sequence of words of the sentence
-    :param tags: iterable sequence of tags
-    :return: phi as dictionary
-    """
-    phi_dict = {}
-    word2i = model.word2i
-    pos2i = model.pos2i
-
-    for i in range(0, len(tags)):
-        word_str = sentence[i]
-        pos_str = tags[i]
-
-        # handle RARE_WORDS
-        try:
-            e_idx = len(pos2i) * word2i[word_str] + pos2i[pos_str]
-        except KeyError:
-            e_idx = len(pos2i) * word2i[RARE_WORD] + pos2i[pos_str]
-
-        # handle START_STATE because is not included in pos2i
-        if i == 0:
-            t_offset = len(pos2i) * len(word2i) + len(pos2i) * len(pos2i)
-        else:
-            prev_tag = tags[i - 1]
-            t_offset = len(pos2i) * len(word2i) + len(pos2i) * pos2i[prev_tag]
-        t_idx = t_offset + pos2i[pos_str]
-
-        phi_i = {e_idx: 1, t_idx: 1}
-
-        for key in phi_i.keys():
-            try:
-                phi_dict[key] = phi_dict[key] + phi_i[key]
-            except KeyError:
-                phi_dict[key] = phi_i[key]
-
-    return (phi_dict)
-
-
-def phi_old(sentence, tags, model):
     """
     uses the words of a sentence to create the sum of the phi-functions as a dictionary
     where only relevant indices are mapped to their value
@@ -637,11 +516,6 @@ def perceptron(training_set, model, eta=0.1, epochs=1):
                 model.w[key] = model.w[key] + eta * phi_diff[key]
             except KeyError:
                 model.w[key] = eta * phi_diff[key]
-        # update w
-        #model.w = w
-        #w = model.w
-    #return (w)
-
 
 def find_frequent_words(training_set, threshold=4):
     """
@@ -690,19 +564,17 @@ if __name__ == '__main__':
     with open('all_PoS.pickle', 'rb') as f:
         pos = pickle.load(f)
 
-    #data_example()
+    data_example()
 
-    # TODO: smarter way of choosing 90% of data
-    # according to training set size and test set size
-
+    # shuffle data since we don't know how it was generated
     random.shuffle(data)
     pd.Series(data).to_pickle('data.pickle')
     #data = pickle.load(open('data.pickle', 'rb'))
     #data = data.tolist()
 
     #training_set = data[0:43757]  # 90% band of data 43757
-    training_set = data[:1000]
-    test_set = data[43758:]
+    training_set = data[0:34033]   # 70% as training_set 34033
+    test_set = data[43758:]        # last 10% of training_set
 
     # words that were used in training set:
     words_used = find_frequent_words(training_set)
