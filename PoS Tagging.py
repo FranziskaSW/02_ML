@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import re
 import random
+from scipy.misc import logsumexp
 
 START_STATE = '*START*'
 START_WORD = '*START*'
@@ -169,14 +170,35 @@ class HMM(object):
         self.pi_y = np.matrix([])
         self.T_prob = np.matrix([])
         self.T_start = np.matrix([])
+        self.T_end = np.matrix([])
 
     def sample(self, n):
         '''
         Sample n sequences of words from the HMM.
         :return: A list of word sequences.
         '''
-
+        tags = []
+        words = []
+        word_str = 'the'
+        self = hmm
         # TODO: YOUR CODE HERE
+        a = np.log(self.T_start) + np.log(self.E_prob[self.word2i[word_str]])
+        pos_idx = a.argmax().item(0)
+        pos_str= self.pos_tags[pos_idx]
+        tags.append(pos_str)
+        words.append(word_str)
+
+        for i in range(1,n):
+            a = np.log(self.T_prob[pos_idx,:]) + np.log(self.E_prob) #previous tag known, want to estimate current tag
+            max_values = a.max(axis=0)        # maximum value for every pos
+            argmax_word = a.argmax(axis=0)    # which word gave this maximum (for every pos)
+            pos_idx = max_values.argmax(axis=1).item(0)  # position of maximum values of possible pos
+            word_idx = argmax_word.item(pos_idx)     # which word belongs to this pos
+            word_str = self.words[word_idx]
+            pos_str = self.pos_tags[pos_idx]
+            words.append(word_str)
+            tags.append(pos_str)
+
 
     def translate_e_idx(self, e_count):
         pos_str = re.split("\|", e_count.e)[1]
@@ -307,12 +329,12 @@ def hmm_mle(training_set, model):
 
     #biring T_freq on 44-pos-states size
     T_start = T_prob[model.pos2i[START_STATE], 1:-1]
-    T_end   = T_prob[model.pos2i[END_STATE], 1:-1]
+    T_end   = T_prob[1:-1, model.pos2i[END_STATE]]
     # remove start and end state again
     T_prob = T_prob[1:-1, 1:-1]
     model.pos2i = {pos:i for (i,pos) in enumerate(model.pos_tags)}
 
-    return([E_prob, pi_y, T_start, T_prob])
+    return([E_prob, pi_y, T_start, T_end, T_prob])
 
 
 
@@ -365,6 +387,7 @@ class MEMM(object):
 
         word_str = sentence[0]
         score = []
+
         try:
             e_offset = len_pos * self.word2i[word_str]  # e(|pos|*word(i))
         except KeyError:
@@ -385,6 +408,8 @@ class MEMM(object):
             except KeyError:
                 score_i = score_i
             score.append(score_i)
+
+        score = score - logsumexp(score)
         score = np.matrix(score)
         t_scores.append(score)
 
@@ -416,6 +441,7 @@ class MEMM(object):
                         score_i = score_i
                     score.append(score_i)
 
+                score = score - logsumexp(score)
                 scores_matrix[j] = score
             t_scores.append(scores_matrix)
 
@@ -449,6 +475,7 @@ def phi(sentence, tags, model):
     where only relevant indices are mapped to their value
     :param sentence: iterable sequence of words of the sentence
     :param tags: iterable sequence of tags
+    :param model: the memm model
     :return: phi as dictionary
     """
     phi_dict = {}
@@ -564,8 +591,6 @@ if __name__ == '__main__':
     with open('all_PoS.pickle', 'rb') as f:
         pos = pickle.load(f)
 
-    data_example()
-
     # shuffle data since we don't know how it was generated
     # random.shuffle(data)
     # pd.Series(data).to_pickle('data.pickle')
@@ -574,14 +599,14 @@ if __name__ == '__main__':
 
     #training_set = data[0:43757]  # 90% band of data 43757
     training_set = data[0:34033]   # 70% as training_set 34033
-    training_set = data[0:1000]
+    training_set = data[0:34033]
     test_set = data[43758:]        # last 10% of training_set
-    test_set = data[43758:(43758+100)]
+    test_set = data[43758:(43758+1000)]
 
     # words that were used in training set:
-    # words_used = find_frequent_words(training_set)
-    # pd.Series(words_used).to_pickle('words_used_90.pickle')
-    words_used = pickle.load(open('words_used_90.pickle', 'rb')).tolist()
+    words_used = find_frequent_words(training_set)
+    pd.Series(words_used).to_pickle('words_used.pickle')
+    words_used = pickle.load(open('words_used.pickle', 'rb')).tolist()
 
     #-------------------------------------------------------------------------------------------------------------------
     # define baseline model
@@ -596,9 +621,10 @@ if __name__ == '__main__':
 
     #-------------------------------------------------------------------------------------------------------------------
     hmm = HMM(pos_tags=pos, words=words_used, training_set=training_set)
-    hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_prob = hmm_mle(training_set, hmm)
+    hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_end, hmm.T_prob = hmm_mle(training_set, hmm)
     pd.DataFrame(hmm.E_prob).to_pickle('hmm_E_prob_70.pickle')
     pd.DataFrame(hmm.T_start).to_pickle('hmm_T_start_70.pickle')
+    pd.DataFrame(hmm.T_end).to_pickle('hmm_T_end_70.pickle')
     pd.DataFrame(hmm.T_prob).to_pickle('hmm_T_prob_70.pickle')
     pd.DataFrame(hmm.pi_y).to_pickle('hmm_pi_y_70.pickle')
 
@@ -607,8 +633,8 @@ if __name__ == '__main__':
     #-------------------------------------------------------------------------------------------------------------------
     memm = MEMM(pos_tags=pos, words=words_used, training_set=training_set, phi = 1)
 
-    # training and save training parameters (w)
-    perceptron(training_set, memm)  # gets better the more often w
+    # train model and save parameters (w)
+    perceptron(training_set, memm)
     with open('memm_w.pickle', 'wb') as f:
         pickle.dump(memm.w, f, protocol=pickle.HIGHEST_PROTOCOL)
     with open('memm_w.pickle', 'rb') as f:
