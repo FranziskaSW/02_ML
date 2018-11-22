@@ -683,8 +683,6 @@ def performance_test(test_set, model):
 
 if __name__ == '__main__':
 
-    data_example()
-    
     with open('PoS_data.pickle', 'rb') as f:
         data = pickle.load(f)
     with open('all_words.pickle', 'rb') as f:
@@ -692,17 +690,24 @@ if __name__ == '__main__':
     with open('all_PoS.pickle', 'rb') as f:
         pos = pickle.load(f)
 
+    #data_example()
+
     # TODO: smarter way of choosing 90% of data
     # according to training set size and test set size
+
+    random.shuffle(data)
+    pd.Series(data).to_pickle('data.pickle')
+    #data = pickle.load(open('data.pickle', 'rb'))
+    #data = data.tolist()
 
     #training_set = data[0:43757]  # 90% band of data 43757
     training_set = data[:1000]
     test_set = data[43758:]
 
     # words that were used in training set:
-    # words_used = find_frequent_words(training_set)
-    # pd.Series(words_used).to_pickle('words_used_90.pickle')
-    words_used = pickle.load(open('words_used_90.pickle', 'rb')).tolist()
+    words_used = find_frequent_words(training_set)
+    pd.Series(words_used).to_pickle('words_used_90.pickle')
+    #words_used = pickle.load(open('words_used_90.pickle', 'rb')).tolist()
 
     #-------------------------------------------------------------------------------------------------------------------
     # define baseline model
@@ -718,7 +723,6 @@ if __name__ == '__main__':
     hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_prob = hmm_mle(training_set, hmm)
 
     score = performance_test(test_set, hmm)
-    #TODO: something wrong with hmm - score is 80% but at baseline is 87%
 
     #-------------------------------------------------------------------------------------------------------------------
     memm = MEMM(pos_tags=pos, words=words_used, training_set=training_set, phi = 1)
