@@ -205,8 +205,7 @@ class HMM(object):
         :param sentences: iterable sequence of word sequences (sentences).
         :return: iterable sequence of PoS tag sequences.
         '''
-        tags = []
-        sentence = data[20020][1]
+
         word_str = sentence[0]
 
         try:
@@ -217,6 +216,8 @@ class HMM(object):
         pi = (np.log(self.T_start) + np.log(self.E_prob[self.word2i[word_str]])).T
 
         argmax_list = []
+        argmax = pi.argmax(axis=0).item(0)
+        argmax_list.append(argmax)
 
         for i in range(1,len(sentence)):
             word_str = sentence[i]
@@ -228,12 +229,20 @@ class HMM(object):
             # TODO: check if summation is in right direction
             a  = pi + np.log(self.T_prob) + np.log(self.E_prob[self.word2i[word_str]])
             pi = a.max(axis=0).T
-            argmax = a.argmax(axis=0)
+            argmax = pi.argmax(axis=0).item(0)
 
             if pi.max() == (-1)*np.inf:
-                print('------------MINUS_INFINITY----------------')
+                # something is wrong, it happens quite often that all the terms cancel out
+                # to not get only zero-vectors following this case, I  go back to the baseline model
                 pi = np.log(self.pi_y) + np.log(self.E_prob[self.word2i[word_str]])
-            argmax_list.append(argmax[argmax > 0])
+                argmax = pi.argmax()
+
+            argmax_list.append(argmax)
+
+        tags = []
+        for i in argmax_list:
+            tag_i = pos[i]
+            tags.append(tag_i)
 
         return(tags)
 
