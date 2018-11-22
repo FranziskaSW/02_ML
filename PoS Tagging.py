@@ -77,7 +77,7 @@ class Baseline(object):
 
     def translate_idx(self, e_count):
         """
-        Translates the word-pos-string pairs into indeces to fill E_prob matrix
+        Translates the word-pos-string pairs into indices to fill E_prob matrix
         :param e_count: string type index of word-pos pair and count
         :return: list of indeces and count-value to fill E_prob matrix
         """
@@ -133,7 +133,7 @@ def baseline_mle(training_set, model):
                                               # pairs have format word_str|pos_str
     e_count = e_pairs.value_counts()          # count how often every pair appears
     e_count = e_count.reset_index()           #
-    e_count.columns = ['e', 'value']
+    e_count.columns = ['e', 'value']          #
 
     # translate pairs to numeric index-pairs for matrix
     tripel = e_count.apply(lambda x: model.translate_idx(x), axis=1)
@@ -187,6 +187,7 @@ class HMM(object):
     def sample(self, n):
         '''
         Sample sequence of n words from the HMM.
+        :param n: desired length of word sequence
         :return: A list of word sequence.
         '''
         tags = []
@@ -195,16 +196,16 @@ class HMM(object):
 
         a = np.log(self.T_start) + np.log(self.E_prob[self.word2i[word_str]])
         pos_idx = a.argmax().item(0)          # which pos leads to maximum value
-        pos_str= self.pos_tags[pos_idx]       #
+        pos_str= self.pos_tags[pos_idx]       # translate index into string of pos
         tags.append(pos_str)
         words.append(word_str)
 
         for i in range(1,n):
-            a = np.log(self.T_prob[pos_idx,:]) + np.log(self.E_prob) #previous tag known, want to estimate current tag
+            a = np.log(self.T_prob[pos_idx,:]) + np.log(self.E_prob) # previous tag known, want to estimate current tag
             max_values = a.max(axis=0)        # maximum value for every pos
             argmax_word = a.argmax(axis=0)    # which word gave this maximum (for every pos)
             pos_idx = max_values.argmax(axis=1).item(0)  # position of maximum values of possible pos
-            word_idx = argmax_word.item(pos_idx)     # which word belongs to this pos
+            word_idx = argmax_word.item(pos_idx)         # which word belongs to this pos
             word_str = self.words[word_idx]
             pos_str = self.pos_tags[pos_idx]
             words.append(word_str)
@@ -213,6 +214,11 @@ class HMM(object):
 
 
     def translate_e_idx(self, e_count):
+        """
+        Translates the word-pos-string pairs into indices to fill E_prob matrix
+        :param e_count: string type index of word-pos pair and count
+        :return: list of indeces and count-value to fill E_prob matrix
+        """
         pos_str = re.split("\|", e_count.e)[1]
         pos_idx = self.pos2i[pos_str]
         word_str = re.split("\|", e_count.e)[0]
@@ -224,6 +230,11 @@ class HMM(object):
         return ([word_idx, pos_idx, value])
 
     def translate_t_idx(self, tag_freq):
+        """
+        Translates the pos-pos-string pairs into indices to fill T_prob matrix
+        :param tag_freq: string type index of pos-pos pair and count
+        :return: list of indeces and count-value to fill T_prob matrix
+        """
         pos_str = re.split("\|", tag_freq.tag)[0]
         pos_r_idx = self.pos2i[pos_str]
         pos_str = re.split("\|", tag_freq.tag)[1]
@@ -234,25 +245,27 @@ class HMM(object):
     def predict_pos(self, sentence):
         '''
         VITERBI ALGORITHM
-        Given an iterable sequence of word sequences, return the most probable
+        Given an iterable sequence of word sequence, return the most probable
         assignment of PoS tags for these words.
-        :param sentences: iterable sequence of word sequences (sentences).
-        :return: iterable sequence of PoS tag sequences.
+        :param sentences: iterable sequence of word sequence (sentence).
+        :return: iterable sequence of PoS tag sequence.
         '''
 
         word_str = sentence[0]
 
         try:
             self.word2i[word_str]
-        except KeyError:
-            word_str = RARE_WORD
+        except KeyError:                     # if word is not found in dictionary
+            word_str = RARE_WORD             # handle it as RARE_WORD
 
+        # pi for first transition (Start_tag to first word)
         pi = (np.log(self.T_start) + np.log(self.E_prob[self.word2i[word_str]])).T
 
-        argmax_list = []
-        argmax = pi.argmax(axis=0).item(0)
-        argmax_list.append(argmax)
+        pos_idx_list = []
+        pos_idx = pi.argmax(axis=0).item(0)   # pos that has highest probability
+        pos_idx_list.append(pos_idx)
 
+        # pi for the other transitions
         for i in range(1,len(sentence)):
             word_str = sentence[i]
             try:
@@ -262,16 +275,17 @@ class HMM(object):
 
             a  = pi + np.log(self.T_prob) + np.log(self.E_prob[self.word2i[word_str]])
             pi = a.max(axis=0).T
-            argmax = pi.argmax(axis=0).item(0)
+            pos_idx = pi.argmax(axis=0).item(0)
 
             if pi.max() == (-1)*np.inf:
                 # something is wrong, it happens quite often that all the terms cancel out
                 # to not get only zero-vectors following this case, I  go back to the baseline model
                 pi = np.log(self.pi_y) + np.log(self.E_prob[self.word2i[word_str]])
-                argmax = pi.argmax()
+                pos_idx = pi.argmax()
 
-            argmax_list.append(argmax)
+            pos_idx_list.append(pos_idx)
 
+        # translate pos indices into pos tags
         tags = []
         for i in argmax_list:
             tag_i = pos[i]
@@ -292,21 +306,22 @@ def hmm_mle(training_set, model):
             any other data structure you prefer.
     """
     T_DF, E_DF = pd.DataFrame(), pd.DataFrame()
-    for row in training_set:
-        # transition pairs: (pos_i-1|pos_i)
+    for row in training_set:                  # for every entry of the training_set
+        # transition pairs: (pos_i-1|pos_i)   # combine pos tag of previous word with pos tag of current word
         t = np.matrix([([START_STATE] + row[0]), (row[0] + [END_STATE])]).T
-        t_df = pd.DataFrame(t)
+        t_df = pd.DataFrame(t)                #
         T_DF = T_DF.append(t_df, ignore_index=True)
-        # emission pairs: (word_i|pos_i)
-        e = np.matrix([row[1], row[0]]).T
-        e_df = pd.DataFrame(e)
+        # emission pairs: (word_i|pos_i)      # also combine word with its pos tag
+        e = np.matrix([row[1], row[0]]).T     #
+        e_df = pd.DataFrame(e)                #
         E_DF = E_DF.append(e_df, ignore_index=True)
 
     e_pairs = E_DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine pos-word
-    # pairs have format word_str|pos_str
-    e_count = e_pairs.value_counts()
-    e_count = e_count.reset_index()
-    e_count.columns = ['e', 'value']
+                                              # output is a pd.Series of index-string-pairs
+                                              # pairs have format word_str|pos_str
+    e_count = e_pairs.value_counts()          #
+    e_count = e_count.reset_index()           #
+    e_count.columns = ['e', 'value']          #
 
     # translate pairs to numeric index-pairs for matrix
     tripel = e_count.apply(lambda x: model.translate_e_idx(x), axis=1)
@@ -319,16 +334,15 @@ def hmm_mle(training_set, model):
     # create E_prob matrix probability P(word, pos)
     E_prob = np.nan_to_num(E_count / E_count.sum(axis=1))
 
-    # P(pos)
+    # P(pos): Probability of pos
     pi_y = E_count.sum(axis=0) / E_count.sum(axis=0).sum()
 
-    #--------------------------------------------------------------------------------------------------------------
-    # same for pos-pairs
+    # do the same for pos-pairs
+    # expand model pos2i-dictionary because here we also consider START_STATE and END_STATE
     model.pos2i = {pos:i for (i,pos) in enumerate([START_STATE] + model.pos_tags + [END_STATE])}
-    tag_pairs = T_DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine Tags to pairs
+    tag_pairs = T_DF.apply(lambda x: str(x[0]) + '|' + str(x[1]), axis=1)  # combine tags to pairs
 
     tag_freq = tag_pairs.value_counts() / len(tag_pairs)
-    #tag_freq = pickle.load(open('HMM_tag_freq-90.pkl', 'rb'))
     tag_freq = tag_freq.reset_index()
     tag_freq.columns = ['tag', 'value']
 
@@ -339,22 +353,22 @@ def hmm_mle(training_set, model):
     for row in tripel:
         T_prob[row[0], row[1]] = T_prob[row[0], row[1]] + row[2]
 
-    #biring T_freq on 44-pos-states size
+    # bring T_freq on 44-pos-states size, drop the rows for START_STATE and END_STATE
     T_start = T_prob[model.pos2i[START_STATE], 1:-1]
     T_end   = T_prob[1:-1, model.pos2i[END_STATE]]
-    # remove start and end state again
     T_prob = T_prob[1:-1, 1:-1]
+
+    # update model
     model.pos2i = {pos:i for (i,pos) in enumerate(model.pos_tags)}
+    model.E_prob = E_prob
+    model.T_prob = T_prob
+    model.T_start = T_start
+    model.T_end = T_end
+    model.pi_y = pi_y
 
-    return([E_prob, pi_y, T_start, T_end, T_prob])
-
-
-
-#-----------------------------------------------------------------------------------------------------------------------
-#-----------------------------------------------------------------------------------------------------------------------
-#-----------------------------------------------------------------------------------------------------------------------
-#-----------------------------------------------------------------------------------------------------------------------
-
+#########################################################################################
+#                       Maximum Entropy Markov Model (MEMM)                             #
+#########################################################################################
 
 class MEMM(object):
     '''
@@ -380,17 +394,17 @@ class MEMM(object):
         self.pos2i = {pos:i for (i,pos) in enumerate(pos_tags)}
         self.word2i = {word:i for (i,word) in enumerate(words + [RARE_WORD])}
         self.phi = phi
-        self.w = {} #{i:val for (i,val) in enumerate(np.random.randn(len(pos_tags)*len(pos_tags)+len(words_used)*len(pos_tags)))}
+        self.w = {}
 
 
     def predict_pos(self, sentence):
         '''
         VITERBI ALGORITHM
-        Given an iterable sequence of word sequences, return the most probable
+        Given an iterable sequence of word sequence, return the most probable
         assignment of POS tags for these words.
-        :param sentences: iterable sequence of word sequences (sentences).
+        :param sentences: iterable sequence of word sequence (sentence).
         :param w: a dictionary that maps a feature index to it's weight.
-        :return: iterable sequence of POS tag sequences.
+        :return: iterable sequence of POS tag sequence.
         '''
         len_pos, len_words = len(self.pos2i), len(self.word2i)
         t_scores = []
@@ -400,17 +414,19 @@ class MEMM(object):
         word_str = sentence[0]
         score = []
 
+        # find the indices for transition and emission state
         try:
-            e_offset = len_pos * self.word2i[word_str]  # e(|pos|*word(i))
-        except KeyError:
-            e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|) It's a rare word
+            e_offset = len_pos * self.word2i[word_str]   # e(|pos|*word(i))
+        except KeyError:                                 # if word not in dictionary
+            e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|) handle as RARE_WORD
 
         t_offset = len_pos * len_words + len_pos * len_pos
 
-        for i in range(0, len_pos):  # iterate over pos-tags of word_str (at position i)
+        for i in range(0, len_pos):  # iterate over pos-tags of word_str (pos of current word)
             e_idx = e_offset + i
             t_idx = t_offset + i
 
+            # check if weight-dictionary already has an entry at this position
             try:
                 score_i = self.w[e_idx]
             except KeyError:
@@ -419,30 +435,31 @@ class MEMM(object):
                 score_i = score_i + self.w[t_idx]
             except KeyError:
                 score_i = score_i
-            score.append(score_i)
+            score.append(score_i)         # iterated over pos of current state,
+                                          # given the START_STATE as previous
+        score = score - logsumexp(score)  # normalize score
+        score = np.matrix(score)          #
+        t_scores.append(score)            #
 
-        score = score - logsumexp(score)
-        score = np.matrix(score)
-        t_scores.append(score)
-
-        # now calculate transitions/emissions for different pos-tages now (i) and pos-tag of previous word (j)
+        # now calculate transitions/emissions for different current pos tags (i) and previous pos tags(j)
         for word_idx in range(1, len(sentence)):
             word_str = sentence[word_idx]
             scores_matrix = np.zeros([len_pos, len_pos])
 
-            for j in range(0,len_pos): # PREVIOUS TAG
-                score = []
-                try:
-                    e_offset = len_pos * self.word2i[word_str]  # e(|pos|*word(i))
-                except KeyError:
-                    e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|) It's a rare word
+            for j in range(0,len_pos):    # iterate over previous tags (j)
+                score = []                #
+                try:                      # check if word is in dictionary
+                    e_offset = len_pos * self.word2i[word_str]   # e(|pos|*word(i))
+                except KeyError:          # if not handle as rare word
+                    e_offset = len_pos * self.word2i[RARE_WORD]  # e(|pos|*|words|)
 
                 t_offset = len_pos * len_words * self.pos2i[self.pos_tags[j]]
 
-                for i in range(0, len_pos):  # to test which of the CURRENT POS would give best result
+                for i in range(0, len_pos):  # to test which of the current pos tags (i) would give best result
                     e_idx = e_offset + i
                     t_idx = t_offset + i
 
+                    # check if weight-dictionary already has an entry at this position
                     try:
                         score_i = self.w[e_idx]
                     except KeyError:
@@ -451,30 +468,32 @@ class MEMM(object):
                         score_i = score_i + self.w[t_idx]
                     except KeyError:
                         score_i = score_i
-                    score.append(score_i)
+                    score.append(score_i)        # iterated over pos of current state
 
-                score = score - logsumexp(score)
-                scores_matrix[j] = score
+                score = score - logsumexp(score) # normalize score
+                scores_matrix[j] = score         # iterated over pos of previous state
             t_scores.append(scores_matrix)
 
-        pi = t_scores[0].T
-        argmax = pi.argmax()
-        argmax_list = []
-        argmax_list.append(argmax)
+        # now find the maximum probabilities of the transitions and find the argmax (index of pos)
+        pi = t_scores[0].T                       # for the first state
+        pos_idx = pi.argmax()                    #
+        pos_idx_list = []                        #
+        pos_idx_list.append(pos_idx)             #
 
-        for i in range(1, len(t_scores)):
-            t_i = t_scores[i]
-            a = pi + t_i
-            pi = a.max(axis=1)
-            argmax = a.argmax(axis=1).T
+        for i in range(1, len(t_scores)):        # now do the same for the following transitions
+            t_i = t_scores[i]                    #
+            a = pi + t_i                         #
+            pi = a.max(axis=1)                   #
+            pos_idx = a.argmax(axis=1).T         #
+                                                 #
+            df = pd.DataFrame(pos_idx.T)         # to handle the case if different pos lead to an maximum
+            val_count = df[0].value_counts()     # count the occurance
+            value = val_count.index[0]           # take the one that appeared the most often
+            pos_idx_list.append(value)           #
 
-            df = pd.DataFrame(argmax.T)
-            val_count = df[0].value_counts()
-            value = val_count.index[0]
-            argmax_list.append(value)
-
+        # translate pos indices into pos tags
         tags = []
-        for i in argmax_list:
+        for i in pos_idx_list:
             tag_i = self.pos_tags[i]
             tags.append(tag_i)
 
@@ -483,7 +502,7 @@ class MEMM(object):
 
 def phi(sentence, tags, model):
     """
-    uses the words of a sentence to create the sum of the phi-functions as a dictionary
+    uses the words and tags to calculate a mapping of the index of the phi vector to its value
     where only relevant indices are mapped to their value
     :param sentence: iterable sequence of words of the sentence
     :param tags: iterable sequence of tags
@@ -494,27 +513,28 @@ def phi(sentence, tags, model):
     word2i = model.word2i
     pos2i = model.pos2i
 
-    for i in range(0, len(tags)):
-        word_str = sentence[i]
-        pos_str = tags[i]
+    for i in range(0, len(sentence)):   # for every word in the sentence
+        word_str = sentence[i]          # get word
+        pos_str = tags[i]               # get pos
 
-        # handle RARE_WORDS
+        # find emission index
         try:
             e_idx = len(pos2i) * word2i[word_str] + pos2i[pos_str]
-        except KeyError:
+        except KeyError:                # if word is not in dictionary, handle it as RARE_WORD
             e_idx = len(pos2i) * word2i[RARE_WORD] + pos2i[pos_str]
 
+        # find the offset of the transition
         # handle START_STATE because is not included in pos2i
         if i == 0:
             t_offset = len(pos2i) * len(word2i) + len(pos2i) * len(pos2i)
         else:
             prev_tag = tags[i - 1]
             t_offset = len(pos2i) * len(word2i) + len(pos2i) * pos2i[prev_tag]
-        t_idx = t_offset + pos2i[pos_str]
+        t_idx = t_offset + pos2i[pos_str]        # combine transition offset with pos to get transition index
 
-        phi_i = {e_idx: 1, t_idx: 1}
+        phi_i = {e_idx: 1, t_idx: 1}    # this is the phi-vector for the given word-pos-pair
 
-        for key in phi_i.keys():
+        for key in phi_i.keys():        # add this new entry to the phi-dictionary
             try:
                 phi_dict[key] = phi_dict[key] + phi_i[key]
             except KeyError:
@@ -526,12 +546,11 @@ def perceptron(training_set, model, eta=0.1, epochs=1):
     """
     learn the weight vector of a log-linear model according to the training set.
     :param training_set: iterable sequence of sentences and their parts-of-speech.
-    :param initial_model: an initial MEMM object, containing among other things
+    :param model: an initial MEMM object, containing among other things
             the phi feature mapping function.
-    :param w0: an initial weights vector.
     :param eta: the learning rate for the perceptron algorithm.
     :param epochs: the amount of times to go over the entire training data (default is 1).
-    :return: w, the learned weights vector for the MEMM.
+    :return: w, the learned weights vector for the MEMM. (with update)
     """
     for i in range(0, len(training_set)):
         sentence = training_set[i][1]
@@ -540,16 +559,18 @@ def perceptron(training_set, model, eta=0.1, epochs=1):
         # most likely sequence of pos given the sentence
         tags_est = model.predict_pos(sentence)
 
+        # calculate the phi-vectors for known tags and estimated tags
         phi_known = phi(sentence=sentence, tags=tags_known, model=model)
         phi_est = phi(sentence=sentence, tags=tags_est, model=model)
 
-        phi_diff = phi_known
-        for key in phi_est.keys():
-            try:
+        phi_diff = phi_known        # calculate difference between the two phi-vectors
+        for key in phi_est.keys():  #
+            try:                    #
                 phi_diff[key] = phi_known[key] - phi_est[key]
-            except KeyError:
+            except KeyError:        #
                 phi_diff[key] = -phi_est[key]
 
+        # update model
         for key in phi_diff.keys():
             try:
                 model.w[key] = model.w[key] + eta * phi_diff[key]
@@ -565,13 +586,14 @@ def find_frequent_words(training_set, threshold=4):
     :return: iterable sequence of words that appeared often enough in training set
     """
     DF = pd.DataFrame()
-    for row in training_set:
-        mat = np.matrix([row[1]]).T
-        df = pd.DataFrame(mat)
+    for row in training_set:         # for every sentence in training_set
+        mat = np.matrix([row[1]]).T  # write list of words into matrix
+        df = pd.DataFrame(mat)       # and transform this matrix into pd.DataFrame
         DF = DF.append(df, ignore_index=True)
 
-    words_count = DF[0].value_counts()
-    words_used = words_count[(words_count > threshold)].index.tolist()
+    words_count = DF[0].value_counts() # count the values in this DataFrame
+    words_used = words_count[(words_count > threshold)].index.tolist() # only keep the ones that appeared more often
+                                                                       # than threshold-times (including)
     return(words_used)
 
 
@@ -616,7 +638,7 @@ if __name__ == '__main__':
     # words that were used in training set:
     words_used = find_frequent_words(training_set)
     pd.Series(words_used).to_pickle('words_used.pickle')
-    #words_used = pickle.load(open('words_used.pickle', 'rb')).tolist()
+    words_used = pickle.load(open('words_used.pickle', 'rb')).tolist()
 
     #-------------------------------------------------------------------------------------------------------------------
     # define baseline model
@@ -627,7 +649,8 @@ if __name__ == '__main__':
     pd.DataFrame(bl.E_prob).to_pickle('bl_E_prob_50.pickle')
     pd.DataFrame(bl.pi_y).to_pickle('bl_pi_y_50.pickle')
 
-    score = performance_test(test_set, bl) # 0.8663122861529187
+    score = performance_test(test_set, bl) # 0.8663122861529187 (50% of data as training_set)
+                                           # 0.8316422798311665 (25% of data as training_set)
     print(score)
 
     #-------------------------------------------------------------------------------------------------------------------
@@ -639,7 +662,8 @@ if __name__ == '__main__':
     pd.DataFrame(hmm.T_prob).to_pickle('hmm_T_prob_50.pickle')
     pd.DataFrame(hmm.pi_y).to_pickle('hmm_pi_y_50.pickle')
 
-    score = performance_test(test_set, hmm) # 0.8989316537845912
+    score = performance_test(test_set, hmm) # 0.8989316537845912 (50% of data as training_set)
+                                            # 0.8798304154335393 (25% of data as training_set)
     print(score)
 
     #-------------------------------------------------------------------------------------------------------------------
@@ -659,6 +683,6 @@ if __name__ == '__main__':
     memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['DT']]
     memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['NN']]
 
-    score = performance_test(test_set, memm)
+    score = performance_test(test_set, memm) # 0.8235056389297039 (25% of data as training_set)
     print(score)
 
