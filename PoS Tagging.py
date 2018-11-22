@@ -287,7 +287,7 @@ class HMM(object):
 
         # translate pos indices into pos tags
         tags = []
-        for i in argmax_list:
+        for i in pos_idx_list:
             tag_i = pos[i]
             tags.append(tag_i)
 
@@ -634,55 +634,37 @@ if __name__ == '__main__':
     #training_set = data[0:43757]  # 90% of data
     training_set = data[0:24309]   # 50% of data
     training_set = data[0:12155]   # 25% of data
+    training_set = data[0:500]
     test_set = data[43758:]        # last 10% of data
     # words that were used in training set:
     words_used = find_frequent_words(training_set)
-    pd.Series(words_used).to_pickle('words_used.pickle')
-    words_used = pickle.load(open('words_used.pickle', 'rb')).tolist()
 
     #-------------------------------------------------------------------------------------------------------------------
     # define baseline model
     bl = Baseline(pos_tags=pos, words=words_used, training_set=training_set)
 
     # training for baseline model, find ML-estimates for transition and emission matrix
-    bl.E_prob, bl.pi_y = baseline_mle(training_set, bl)
-    pd.DataFrame(bl.E_prob).to_pickle('bl_E_prob_50.pickle')
-    pd.DataFrame(bl.pi_y).to_pickle('bl_pi_y_50.pickle')
-
+    baseline_mle(training_set, bl)
     score = performance_test(test_set, bl) # 0.8663122861529187 (50% of data as training_set)
                                            # 0.8316422798311665 (25% of data as training_set)
     print(score)
 
     #-------------------------------------------------------------------------------------------------------------------
+    # define hmm model
     hmm = HMM(pos_tags=pos, words=words_used, training_set=training_set)
-    hmm.E_prob, hmm.pi_y, hmm.T_start, hmm.T_end, hmm.T_prob = hmm_mle(training_set, hmm)
-    pd.DataFrame(hmm.E_prob).to_pickle('hmm_E_prob_50.pickle')
-    pd.DataFrame(hmm.T_start).to_pickle('hmm_T_start_50.pickle')
-    pd.DataFrame(hmm.T_end).to_pickle('hmm_T_end_50.pickle')
-    pd.DataFrame(hmm.T_prob).to_pickle('hmm_T_prob_50.pickle')
-    pd.DataFrame(hmm.pi_y).to_pickle('hmm_pi_y_50.pickle')
 
+    # training of hmm model
+    hmm_mle(training_set, hmm)
     score = performance_test(test_set, hmm) # 0.8989316537845912 (50% of data as training_set)
                                             # 0.8798304154335393 (25% of data as training_set)
     print(score)
 
     #-------------------------------------------------------------------------------------------------------------------
+    # define memm model
     memm = MEMM(pos_tags=pos, words=words_used, training_set=training_set, phi = 1)
 
-    # train model and save parameters (w)
+    #training of memm model
     perceptron(training_set, memm)
-    with open('memm_w.pickle', 'wb') as f:
-        pickle.dump(memm.w, f, protocol=pickle.HIGHEST_PROTOCOL)
-    with open('memm_w.pickle', 'rb') as f:
-        memm.w = pickle.load(f)
-
-    memm.w[len(memm.pos2i) * memm.word2i['the'] + memm.pos2i['DT']]
-    memm.w[len(memm.pos2i) * memm.word2i[','] + memm.pos2i[',']]
-    memm.w[len(memm.pos2i) * memm.word2i['as'] + memm.pos2i['IN']]
-    memm.w[len(memm.pos2i) * memm.word2i['is'] + memm.pos2i['VBZ']]
-    memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['DT']]
-    memm.w[len(memm.pos2i) * memm.word2i[RARE_WORD] + memm.pos2i['NN']]
-
     score = performance_test(test_set, memm) # 0.8235056389297039 (25% of data as training_set)
     print(score)
 
